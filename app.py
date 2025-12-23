@@ -103,7 +103,7 @@ def create_exam():
         return jsonify({
             "error": "Error interno en el servidor",
             "detail": str(e)
-        }), 500})
+        }), 500
 
 
 
