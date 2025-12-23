@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Creador de Exámenes</title>
+</head>
+<body>
+
+<h1>Creador de Exámenes</h1>
+
+<label>Facilitador
+<input id="facilitator">
+</label>
+
+<label>Cédula del facilitador
+<input id="facilitator_cedula">
+</label>
+
+<label>Curso
+<input id="course">
+</label>
+
+<p><strong>Este examen incluye preguntas predeterminadas.</strong></p>
+
+<hr>
+
+<div id="questions_container"></div>
+
+<button id="add_question">Agregar pregunta</button>
+<button id="generate_exam">Generar examen</button>
+
+<div id="result"></div>
+
+<script src="/static/creator.js"></script>
+</body>
+</html>
