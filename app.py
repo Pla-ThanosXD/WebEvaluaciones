@@ -60,41 +60,50 @@ def index():
 
 @app.route("/create_exam", methods=["POST"])
 def create_exam():
-    data = request.json
+    try:
+        data = request.get_json(force=True)
 
-    facilitator = data.get("facilitator")
-    facilitator_cedula = data.get("facilitator_cedula")
-    course = data.get("course")
-    custom_questions = data.get("questions", [])
+        facilitator = data.get("facilitator")
+        facilitator_cedula = data.get("facilitator_cedula")
+        course = data.get("course")
+        custom_questions = data.get("questions", [])
 
-    if not facilitator or not facilitator_cedula or not course:
-        return jsonify({"error": "Datos incompletos"}), 400
+        if not facilitator or not facilitator_cedula or not course:
+            return jsonify({"error": "Datos incompletos"}), 400
 
-    questions = DEFAULT_QUESTIONS + custom_questions
-    exam_id = uuid.uuid4().hex[:8]
+        questions = DEFAULT_QUESTIONS + custom_questions
+        exam_id = uuid.uuid4().hex[:8]
 
-    service = get_sheets_service()
+        service = get_sheets_service()
 
-    service.spreadsheets().values().append(
-        spreadsheetId=SPREADSHEET_ID,
-        range=SHEET_EXAMS,
-        valueInputOption="RAW",
-        insertDataOption="INSERT_ROWS",
-        body={
-            "values": [[
-                exam_id,
-                facilitator,
-                facilitator_cedula,
-                course,
-                datetime.utcnow().isoformat(),
-                json.dumps(questions)
-            ]]
-        }
-    ).execute()
+        service.spreadsheets().values().append(
+            spreadsheetId=SPREADSHEET_ID,
+            range="Exams!A:F",
+            valueInputOption="RAW",
+            insertDataOption="INSERT_ROWS",
+            body={
+                "values": [[
+                    exam_id,
+                    facilitator,
+                    facilitator_cedula,
+                    course,
+                    datetime.utcnow().isoformat(),
+                    json.dumps(questions)
+                ]]
+            }
+        ).execute()
 
-    return jsonify({
-        "exam_url": request.host_url.rstrip("/") + f"/exam/{exam_id}"
-    })
+        return jsonify({
+            "exam_url": request.host_url.rstrip("/") + f"/exam/{exam_id}"
+        })
+
+    except Exception as e:
+        print("❌ ERROR EN /create_exam:", repr(e))
+        return jsonify({
+            "error": "Error interno en el servidor",
+            "detail": str(e)
+        }), 500
+
 
 # =========================
 # SHOW EXAM
