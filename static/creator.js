@@ -61,17 +61,26 @@ document.getElementById("generate_exam").onclick = async () => {
     questions.push({ title: text, type, options });
   });
 
-  const res = await fetch("/create_exam", {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({
-      facilitator,
-      facilitator_cedula,
-      course,
-      questions
-    })
-  });
+ const res = await fetch("/create_exam", {
+  method: "POST",
+  headers: {"Content-Type":"application/json"},
+  body: JSON.stringify({
+    facilitator,
+    facilitator_cedula,
+    course,
+    questions
+  })
+});
 
-  const data = await res.json();
-  result.innerHTML = `<a href="${data.exam_url}" target="_blank">${data.exam_url}</a>`;
-};
+const data = await res.json();
+console.log("📥 Respuesta backend:", data);
+
+if (!res.ok || !data.exam_url) {
+  alert("Error al crear el examen:\n" + (data.detail || data.error || "Respuesta inválida"));
+  return;
+}
+
+result.innerHTML = `
+  <p><strong>Examen creado:</strong></p>
+  <a href="${data.exam_url}" target="_blank">${data.exam_url}</a>
+`;
