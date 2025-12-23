@@ -78,7 +78,7 @@ def create_exam():
 
         service.spreadsheets().values().append(
             spreadsheetId=SPREADSHEET_ID,
-            range="Exams!A:F",
+            range=SHEET_EXAMS,
             valueInputOption="RAW",
             insertDataOption="INSERT_ROWS",
             body={
@@ -93,16 +93,17 @@ def create_exam():
             }
         ).execute()
 
+        # ✅ RETURN SOLO AQUÍ
+        return jsonify({
+            "exam_url": request.host_url.rstrip("/") + f"/exam/{exam_id}"
+        })
+
     except Exception as e:
         print("❌ ERROR EN /create_exam:", repr(e))
         return jsonify({
             "error": "Error interno en el servidor",
             "detail": str(e)
-        }), 500
-    
-    return jsonify({
-            "exam_url": request.host_url.rstrip("/") + f"/exam/{exam_id}"
-        })
+        }), 500})
 
 
 
@@ -177,4 +178,5 @@ def submit_exam():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+
 
