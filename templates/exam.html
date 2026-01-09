@@ -2,30 +2,380 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<title>Examen</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ exam.course }}</title>
+
+<style>
+:root {
+  --bg:#f4f6fb;
+  --card:#fff;
+  --text:#000;
+  --muted:#6b7280;
+  --border:#e5e7eb;
+}
+*{box-sizing:border-box;}
+body{
+  font-family:"Segoe UI",Arial,sans-serif;
+  background:linear-gradient(135deg,#ffffff,#f8fafc);
+  padding:30px;
+  color:var(--text);
+  background-image:url(/static/fondos.webp);
+}
+.container{
+  max-width:850px;margin:auto;background:var(--card);
+  padding:56px;border-radius:16px;box-shadow:0 20px 40px rgba(0,0,0,.08);
+}
+h1{text-align:center;margin-bottom:10px;color:#9e1b1c;}
+.subtitle{text-align:center;color:var(--muted);margin-bottom:30px;}
+label.main{font-weight:600;display:block;margin-top:18px;margin-bottom:6px;}
+input[type=text], input{
+  width:100%;padding:12px 14px;border-radius:10px;border:1px solid #d1d5db;font-size:15px;
+}
+.question{
+  margin-top:22px;padding:18px;background:#f9fafb;border-radius:14px;border-left:7px solid #9e1b1c;
+}
+.question b{display:block;margin-bottom:12px;}
+.option{
+  display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;cursor:pointer;
+}
+.option:hover{background:#eef2ff;}
+.option input{width:auto;margin:0;transform:scale(1.15);accent-color:#000;}
+textarea{
+  width:100%;min-height:90px;padding:12px 14px;border-radius:10px;border:1px solid #d1d5db;font-size:15px;
+}
+button{
+  margin-top:35px;width:100%;padding:16px;font-size:17px;font-weight:600;color:#fff;
+  background:linear-gradient(135deg,#9e1b1c,#9e1b1c);
+  border:none;border-radius:14px;cursor:pointer;
+}
+button:disabled{opacity:.6;cursor:not-allowed;}
+
+.banner_completo{width:100%;max-width:800px;display:block;margin:0 auto 30px auto;border-radius:5px;}
+
+.feedback{
+  margin-top:10px;
+  padding:10px 12px;
+  border-radius:10px;
+  border:1px solid var(--border);
+  background:#fff;
+  font-size:14px;
+}
+.fb-ok{border-color:#22c55e;}
+.fb-bad{border-color:#ef4444;}
+.fb-neutral{border-color:#cbd5e1;}
+.fb-title{font-weight:800;margin-bottom:6px;}
+.small{color:var(--muted);font-size:13px;margin-top:6px;}
+.scorebox{
+  margin-top:20px;padding:14px;border:1px solid var(--border);border-radius:12px;background:#fff;
+}
+</style>
 </head>
+
 <body>
+<div class="container">
+  <img src="/static/Banner04.png" class="banner_completo" alt="Banner">
+  <h1>{{ exam.course }}</h1>
+  <div class="subtitle">Facilitador: <b>{{ exam.facilitator }}</b></div>
 
-<h2>{{ exam.course }}</h2>
-<p><strong>Facilitador:</strong> {{ exam.facilitator }}</p>
+  <label class="main">Nombre completo</label>
+  <input id="nombre" placeholder="Ingrese su nombre">
 
-<label>Nombre
-<input id="nombre">
-</label>
+  <label class="main">Registro</label>
+  <input id="registro" placeholder="Ingrese su número de registro">
 
-<label>Cédula
-<input id="cedula">
-</label>
+  <label class="main">Cédula</label>
+  <input id="cedula" placeholder="Ej: 00123456789">
 
-<div id="questions"></div>
+  <form id="exam_form">
+    {% for q in exam.questions %}
+      {% set q_index = loop.index0 %}
+      <div class="question"
+           data-qtype="{{ q.type }}"
+           data-qindex="{{ q_index }}"
+           data-title="{{ q.title }}">
+        <b>{{ loop.index }}. {{ q.title }}</b>
 
-<button id="send">Enviar examen</button>
-<div id="result"></div>
+        {% if q.type == "text" %}
+          <input type="text" class="answer-text" placeholder="Escriba su respuesta">
+
+        {% elif q.type == "true_false" %}
+          <label class="option">
+            <input type="radio" name="q_{{ exam.id }}_{{ q_index }}" value="VERDADERO">
+            <span>VERDADERO</span>
+          </label>
+          <label class="option">
+            <input type="radio" name="q_{{ exam.id }}_{{ q_index }}" value="FALSO">
+            <span>FALSO</span>
+          </label>
+
+        {% elif q.type == "multiple" %}
+          {% for opt in q.options %}
+            <label class="option">
+              <input type="radio"
+                     name="q_{{ exam.id }}_{{ q_index }}"
+                     value="{{ opt }}">
+              <span>{{ opt }}</span>
+            </label>
+          {% endfor %}
+
+        {% elif q.type == "check" %}
+          {% for opt in q.options %}
+            <label class="option">
+              <input type="checkbox"
+                     name="q_{{ exam.id }}_{{ q_index }}_chk"
+                     value="{{ opt }}">
+              <span>{{ opt }}</span>
+            </label>
+          {% endfor %}
+          <div class="small">Puedes seleccionar más de una opción.</div>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </form>
+
+  <button type="button" id="sendBtn">Enviar examen</button>
+
+  <div id="scoreBox" class="scorebox" style="display:none;"></div>
+</div>
 
 <script>
-  window.EXAM = {{ exam | tojson }};
-</script>
-<script src="/static/exam.js"></script>
+function normalizeText(text) {
+  return (text || "")
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
 
+function disableAllInputs() {
+  document.querySelectorAll("#exam_form input, #nombre, #registro, #cedula").forEach(el => {
+    el.disabled = true;
+  });
+  document.getElementById("sendBtn").disabled = true;
+}
+
+function showScore(score, total, percent) {
+  const box = document.getElementById("scoreBox");
+  box.style.display = "block";
+  box.innerHTML = `
+    <div style="font-weight:900;font-size:18px;margin-bottom:6px;">Resultado</div>
+    <div><b>Puntaje:</b> ${score} / ${total}</div>
+    <div><b>Porcentaje:</b> ${percent}%</div>
+  `;
+}
+
+function paintFeedback(details) {
+  details.forEach(d => {
+   const qEl = document.querySelector(`.question[data-qindex="${d.index}"]`);
+
+    if (!qEl) return;
+
+    const fb = document.createElement("div");
+    fb.className = "feedback";
+
+    if (d.is_correct === true) {
+      fb.classList.add("fb-ok");
+      fb.innerHTML = `
+        <div class="fb-title">✅ Correcta</div>
+        <div><b>Tu respuesta:</b> ${formatValue(d.user_value)}</div>
+      `;
+    } else if (d.is_correct === false) {
+      fb.classList.add("fb-bad");
+      fb.innerHTML = `
+        <div class="fb-title">❌ Incorrecta</div>
+        <div><b>Tu respuesta:</b> ${formatValue(d.user_value)}</div>
+        <div><b>Correcta:</b> ${formatValue(d.correct_value)}</div>
+      `;
+    } else {
+      fb.classList.add("fb-neutral");
+      fb.innerHTML = `
+        <div class="fb-title">ℹ️ No calificable</div>
+        <div><b>Tu respuesta:</b> ${formatValue(d.user_value)}</div>
+      `;
+    }
+
+    qEl.appendChild(fb);
+
+    if (d.is_correct === true) qEl.style.borderLeftColor = "#22c55e";
+    if (d.is_correct === false) qEl.style.borderLeftColor = "#ef4444";
+  });
+}
+
+function formatValue(v) {
+  if (Array.isArray(v)) return v.join(", ");
+  if (v === null || v === undefined) return "";
+  return String(v);
+}
+
+/* =========================================================
+   ✅ MOSTRAR ÁREA SOLO SI GERENCIA = OPERACIONES
+   ========================================================= */
+function toggleAreaQuestionByGerencia() {
+  const all = [...document.querySelectorAll(".question")];
+
+  const gerenciaBlock = all.find(q => normalizeText(q.getAttribute("data-title")) === normalizeText("Gerencia"));
+  const areaBlock     = all.find(q => normalizeText(q.getAttribute("data-title")) === normalizeText("Área"));
+
+  if (!gerenciaBlock || !areaBlock) return;
+
+  const selected = gerenciaBlock.querySelector('input[type="radio"]:checked');
+  const selectedValue = selected ? normalizeText(selected.value) : "";
+
+  if (selectedValue !== normalizeText("Gerencia de Operaciones")) {
+    // ocultar área
+    areaBlock.style.display = "none";
+
+    // limpiar respuestas
+    areaBlock.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+  } else {
+    areaBlock.style.display = "block";
+  }
+}
+
+// escuchar cambios para actualizar cuando escojan gerencia
+document.addEventListener("change", (e) => {
+  if (e.target && e.target.type === "radio") {
+    toggleAreaQuestionByGerencia();
+  }
+});
+
+// ejecutar al cargar
+toggleAreaQuestionByGerencia();
+
+/* =========================================================
+   ✅ "OTRO" EN ÁREA -> MUESTRA INPUT DE TEXTO
+   ========================================================= */
+function setupAreaOtherInput() {
+  const all = [...document.querySelectorAll(".question")];
+
+  const areaBlock = all.find(q => normalizeText(q.getAttribute("data-title")) === normalizeText("Área"));
+  if (!areaBlock) return;
+
+  // buscar checkbox "Otro"
+  const otherCheckbox = [...areaBlock.querySelectorAll('input[type="checkbox"]')]
+    .find(cb => normalizeText(cb.value) === normalizeText("Otro"));
+
+  if (!otherCheckbox) return;
+
+  // crear input (una sola vez)
+  let otherInput = areaBlock.querySelector("#area_other_input");
+  if (!otherInput) {
+    otherInput = document.createElement("input");
+    otherInput.type = "text";
+    otherInput.id = "area_other_input";
+    otherInput.placeholder = "Especifica cuál es el otro...";
+    otherInput.style.marginTop = "10px";
+    otherInput.style.display = "none";
+    areaBlock.appendChild(otherInput);
+  }
+
+  function toggleOtherInput() {
+    if (otherCheckbox.checked) {
+      otherInput.style.display = "block";
+      otherInput.focus();
+    } else {
+      otherInput.style.display = "none";
+      otherInput.value = "";
+    }
+  }
+
+  otherCheckbox.addEventListener("change", toggleOtherInput);
+  toggleOtherInput();
+}
+
+// ejecutar al cargar
+setupAreaOtherInput();
+
+
+/* ========================================================= */
+
+document.getElementById("sendBtn").addEventListener("click", submitExam);
+
+async function submitExam() {
+  let nombre = normalizeText(document.getElementById("nombre").value);
+  const registro = (document.getElementById("registro").value || "").trim();
+  const cedula = (document.getElementById("cedula").value || "").trim();
+
+  if (!nombre || !registro || !cedula) {
+    alert("Nombre, Registro y cédula obligatorios");
+    return;
+  }
+
+  const answers = [];
+  const blocks = document.querySelectorAll(".question");
+
+  for (let i = 0; i < blocks.length; i++) {
+    const qBlock = blocks[i];
+    const qType = qBlock.getAttribute("data-qtype");
+
+    if (qType === "multiple" || qType === "true_false") {
+      const checked = qBlock.querySelector('input[type="radio"]:checked');
+      if (!checked) return alert(`Pregunta ${i+1} incompleta`);
+      answers.push(checked.value);
+
+    } else if (qType === "check") {
+
+      // ✅ Si el bloque está oculto, enviar [] y no obligar
+      if (qBlock.style.display === "none") {
+        answers.push([]);
+        continue;
+      }
+
+      const checked = [...qBlock.querySelectorAll('input[type="checkbox"]:checked')].map(x => x.value);
+      if (!checked.length) return alert(`Pregunta ${i+1} incompleta`);
+          
+      // ✅ Si está marcado "Otro", concatenar texto
+      const otherSelected = checked.some(v => normalizeText(v) === normalizeText("Otro"));
+      if (otherSelected) {
+        const otherInput = qBlock.querySelector("#area_other_input");
+        const otherText = (otherInput?.value || "").trim();
+        if (!otherText) return alert("Escribe el texto para la opción 'Otro'.");
+        // reemplazar "Otro" por "Otro: <texto>"
+        const idx = checked.findIndex(v => normalizeText(v) === normalizeText("Otro"));
+        checked[idx] = `Otro: ${otherText}`;
+      }
+      
+      answers.push(checked);
+
+
+    } else { // text
+      const input = qBlock.querySelector('input[type="text"]');
+      const val = (input?.value || "").trim();
+      if (!val) return alert(`Pregunta ${i+1} vacía`);
+      answers.push(val);
+    }
+  }
+
+  const res = await fetch("/submit_exam", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({
+      exam_id:"{{ exam.id }}",
+      nombre,
+      registro,
+      cedula,
+      answers
+    })
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (res.ok) {
+    disableAllInputs();
+    showScore(data.score, data.total, data.percent);
+    paintFeedback(data.details || []);
+    alert("Examen enviado correctamente");
+    return;
+  }
+
+  if (res.status === 409) {
+    disableAllInputs();
+    alert(data.error || "Ya habías enviado este examen.");
+    return;
+  }
+
+  alert("Error: " + (data.error || "No se pudo enviar el examen"));
+}
+</script>
 </body>
 </html>
