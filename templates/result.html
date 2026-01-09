@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="/static/icono.png" type="image/png">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Resultado - {{ exam.course }}</title>
+<style>
+body{
+  font-family: "Segoe UI", Arial, sans-serif;
+  background:#f8fafc;
+  padding: 30px;
+  background-image: url(/static/fondos.webp);
+}
+.card{
+  max-width: 720px;
+  margin: auto;
+  background:#fff;
+  padding: 28px;
+  border-radius: 16px;
+  box-shadow: 0 20px 40px rgba(0,0,0,.08);
+  border-left: 7px solid #9e1b1c;
+}
+h1{ margin: 0 0 8px 0; color:#9e1b1c; }
+.small{ color:#6b7280; margin-bottom: 18px; }
+.badge{
+  display:inline-block;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background:#111827;
+  color:#fff;
+  font-weight:700;
+}
+.row{ margin-top: 14px; font-size: 16px; }
+a{ color:#4f46e5; font-weight:700; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>Resultado del examen</h1>
+  <div class="small"><b>{{ exam.course }}</b> — Facilitador: {{ exam.facilitator }}</div>
+
+  {% if sub %}
+    <div class="row"><span class="badge">✅ Enviado</span></div>
+    <div class="row"><b>Nombre:</b> {{ sub.nombre }}</div>
+    <div class="row"><b>Cédula:</b> {{ sub.cedula }}</div>
+    <div class="row"><b>Puntaje:</b> {{ sub.score }} / {{ sub.total }}</div>
+    <div class="row"><b>Porcentaje:</b> {{ sub.percent }}%</div>
+    <div class="row" style="margin-top:18px;">
+      <a href="/exam/{{ exam.id }}">Volver al examen</a>
+    </div>
+  {% else %}
+    <div class="row"><span class="badge">⚠️ No encontrado</span></div>
+    <div class="row">No hay envío registrado para esa cédula en este examen.</div>
+    <div class="row" style="margin-top:18px;">
+      <a href="/exam/{{ exam.id }}">Ir al examen</a>
+    </div>
+  {% endif %}
+</div>
+
+</body>
+</html>
