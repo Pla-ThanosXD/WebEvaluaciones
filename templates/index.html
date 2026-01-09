@@ -2,34 +2,179 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<title>Creador de Exámenes</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Formaciones</title>
+
+<style>
+:root { --border:#dde3ea; }
+*{box-sizing:border-box;}
+body{
+  font-family:"Inter","Segoe UI","Roboto",sans-serif;
+  margin:0;padding:70px 20px;
+  background-image:url(/static/fondos.webp);
+}
+.container{max-width:860px;margin:auto;}
+.card{
+  background:#fff;border-radius:26px;padding:30px;
+  border:2px solid #fff; box-shadow:0 18px 40px rgba(0,0,0,0.15);
+}
+label{display:block;margin-top:16px;font-weight:700;color:#9e1b1c;}
+input,select{
+  width:100%;padding:14px 16px;border-radius:10px;border:1px solid var(--border);
+  margin-top:8px;font-size:16px;background:#fcfcfd;
+}
+h3{margin-top:26px;color:#9e1b1c;}
+button{
+  width:100%;margin-top:14px;padding:15px 18px;border:none;border-radius:12px;
+  font-weight:800;cursor:pointer;color:#fff;
+  background:linear-gradient(135deg,#9e1b1c,#9e1b1c);
+}
+button.secondary{background:#111827;}
+button:disabled{opacity:.6;cursor:not-allowed;}
+.hidden{display:none!important;}
+
+.choice-pill{display:inline-flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap;}
+.choice-pill label{margin-top:0;background:#f3f4f6;padding:8px 12px;border-radius:999px;color:#0b3c91;cursor:pointer;}
+.choice-pill input{display:none;}
+.choice-pill input:checked + span{background:#9e1b1c;color:#fff;padding:8px 12px;border-radius:999px;}
+
+.question{background:#fff;padding:16px;border:1px solid var(--border);border-radius:14px;margin-top:12px;}
+#result{margin-top:16px;padding:16px;border:1px solid var(--border);border-radius:14px;background:#fff;}
+.small{color:#6b7280;font-size:13px;margin-top:6px;}
+.row2{display:flex;gap:10px;margin-top:12px;}
+.row2 button{width:50%;}
+hr{margin:26px 0;border:none;border-top:1px solid #e5e7eb;}
+</style>
 </head>
+
 <body>
+<div class="container">
+  <div class="card">
 
-<h1>Creador de Exámenes</h1>
+    <img src="/static/Banner_Examenes.png" alt="" height="200px" width="750px" style="display: block; margin-left: auto; margin-right: auto; border-radius: 15px;">
+    
+    <h3 style="text-align: center;"></h3>
 
-<label>Facilitador
-<input id="facilitator">
-</label>
+    <label>Nombre del facilitador</label>
+    <input id="facilitator" placeholder="Ej: Juan Pérez">
 
-<label>Cédula del facilitador
-<input id="facilitator_cedula">
-</label>
+    <label>Cédula del facilitador</label>
+    <input id="facilitator_cedula" placeholder="Ej: 12345678">
 
-<label>Curso
-<input id="course">
-</label>
+    <label>Nombre del curso</label>
+    <input id="course" placeholder="Ej: Curso de Excel">
+    
+    <label>Fecha de la formación</label>
+    <input type="date" id="course_date">
 
-<p><strong>Este examen incluye preguntas predeterminadas.</strong></p>
+    <label>Duración en horas</label>
+    <input type="number" id="course_duration" placeholder="Ej: 8" min="1" step="1">
 
-<hr>
+    <label>Número de invitados</label>
+    <input type="number" id="num_invites" placeholder="Ej: 30" min="1" step="1">
 
-<div id="questions_container"></div>
+    <label>Correo del facilitador</label>
+    <input id="facilitator_email" placeholder="Ej: pracdiseno@noel.com.co">
 
-<button id="add_question">Agregar pregunta</button>
-<button id="generate_exam">Generar examen</button>
+    <hr>
+    <h3>¿Requiere validar conocimiento?</h3>
+    <div class="choice-pill">
+      <label for="mode_yes">
+        <input type="radio" name="main_mode" id="mode_yes" value="yes">
+        <span>Sí</span>
+      </label>
+      <label for="mode_no">
+        <input type="radio" name="main_mode" id="mode_no" value="no">
+        <span>No</span>
+      </label>
+    </div>
+    <div id="yes_submode_block" class="hidden">
+      <hr>
+      <div id="direct_link_block" class="hidden">
+  <hr>
+      <h3>Registro sin evaluación</h3>
+      <p>Si no necesitas validar conocimientos, usa el formulario estándar:</p>
+          
+      <a href="https://docs.google.com/forms/d/e/1FAIpQLSeQhPUPr_23-KesWKXOmpNqM4Aot_DJZnHbeB-ja5KLywnS5g/viewform"
+         target="_blank"
+         style="display:block;text-align:center;margin-top:12px;font-weight:800;color:#9e1b1c;">
+          Abrir formulario de asistencia
+      </a>
+    </div>
 
-<div id="result"></div>
+      <h3>¿Cómo deseas hacerlo?</h3>
+      <div class="choice-pill">
+        <label for="sub_create0">
+          <input type="radio" name="sub_mode" id="sub_create0" value="create0">
+          <span>Crear evaluación desde cero</span>
+        </label>
+        <label for="sub_reuse">
+          <input type="radio" name="sub_mode" id="sub_reuse" value="reuse">
+          <span>Reutilizar evaluación previa</span>
+        </label>
+      </div>
+      <div class="small">
+        Si elijes reutilizar podras editar o no una evaluación existente.
+      </div>
+      <div id="create0_block" class="hidden">
+        <hr>
+        <h3>Preguntas personalizadas</h3>
+        <div id="questions_container"></div>
+
+        <button id="add_question" type="button" class="secondary">Agregar pregunta</button>
+        <button id="generate_exam" type="button">Generar evaluaciones</button>
+
+        <div id="result"></div>
+      </div>
+
+      <!-- ======  ====== -->
+      <div id="reuse_block" class="hidden">
+        <hr>
+        <h3>📚 Exámenes existentes</h3>
+
+        <label>Selecciona un examen</label>
+        <select id="exam_select">
+          <option value="" selected disabled>Cargando…</option>
+        </select>
+
+        <div class="row2">
+          <button id="btn_reuse" class="secondary" type="button">Reutilizar</button>
+          <button id="btn_edit" class="secondary" type="button">Editar examen</button>
+        </div>
+        <div class="small">Reutilizar crea un examen nuevo (nuevo link). Editar modifica el mismo examen.</div>
+
+        <!-- Editor -->
+        <div id="edit_area" class="hidden">
+          <hr>
+          <h3>✏️ Editor del examen</h3>
+
+          <label>Nombre del facilitador</label>
+          <input id="facilitator_edit" placeholder="Ej: Juan Pérez">
+
+          <label>Cédula del facilitador</label>
+          <input id="facilitator_cedula_edit" placeholder="Ej: 12345678">
+
+          <label>Nombre del curso</label>
+          <input id="course_edit" placeholder="Ej: Curso de Excel">
+
+          <h3>🧩 Preguntas (se editan TODAS)</h3>
+          <div id="questions_container_edit"></div>
+
+          <button id="add_question_edit" type="button" class="secondary">Agregar pregunta</button>
+          <button id="save_edit" type="button" class="secondary">Guardar cambios (Editar)</button>
+
+          <div id="result_edit" style="margin-top:16px;padding:16px;border:1px solid #dde3ea;border-radius:14px;background:#fff;"></div>
+        </div>
+
+        <div id="result_reuse" style="margin-top:16px;padding:16px;border:1px solid #dde3ea;border-radius:14px;background:#fff;"></div>
+      </div>
+    </div>
+
+  </div>
+</div> 
+   
+    </div>
+    
 
 <script src="/static/creator.js"></script>
 </body>
