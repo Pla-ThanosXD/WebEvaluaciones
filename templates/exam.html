@@ -75,16 +75,24 @@ button:disabled{opacity:.6;cursor:not-allowed;}
 <div class="container">
   <img src="/static/Banner04.png" class="banner_completo" alt="Banner">
   <h1>{{ exam.course }}</h1>
-  <div class="subtitle">Facilitador: <b>{{ exam.facilitator }}</b></div>
+   <div class="subtitle">
+    Facilitador: <b>{{ exam.facilitator }}</b><br>
+    {% if exam.course_description %}
+      <span style="display:inline-block;margin-top:8px;color:#6b7280;">
+        {{ exam.course_description }}
+      </span>
+    {% endif %}
+  </div>
 
-  <label class="main">Nombre completo</label>
+
+  <label class="main">Nombre completo del asistente</label>
   <input id="nombre" placeholder="Ingrese su nombre">
 
-  <label class="main">Registro</label>
+  <label class="main">Registro del Asistente (Solo personal vinculado)</label>
   <input id="registro" placeholder="Ingrese su número de registro">
 
-  <label class="main">Cédula</label>
-  <input id="cedula" placeholder="Ej: 00123456789">
+  <label class="main">Cédula del asistente</label>
+  <input id="cedula" placeholder="Ej: 123456789">
 
   <form id="exam_form">
     {% for q in exam.questions %}
@@ -133,7 +141,7 @@ button:disabled{opacity:.6;cursor:not-allowed;}
     {% endfor %}
   </form>
 
-  <button type="button" id="sendBtn">Enviar examen</button>
+  <button type="button" id="sendBtn">Enviar</button>
 
   <div id="scoreBox" class="scorebox" style="display:none;"></div>
 </div>
@@ -159,8 +167,8 @@ function showScore(score, total, percent) {
   box.style.display = "block";
   box.innerHTML = `
     <div style="font-weight:900;font-size:18px;margin-bottom:6px;">Resultado</div>
-    <div><b>Puntaje:</b> ${score} / ${total}</div>
-    <div><b>Porcentaje:</b> ${percent}%</div>
+    <div><b>Preguntas acertadas:</b> ${score} / ${total}</div>
+    <div><b>:</b> ${percent}%</div>
   `;
 }
 
@@ -221,7 +229,8 @@ function toggleAreaQuestionByGerencia() {
   const selected = gerenciaBlock.querySelector('input[type="radio"]:checked');
   const selectedValue = selected ? normalizeText(selected.value) : "";
 
-  if (selectedValue !== normalizeText("Gerencia de Operaciones")) {
+ if (selectedValue !== normalizeText("Gerencia de Operaciones (Planta y Áreas de Logística)"))
+  if (selectedValue !== normalizeText("Terceros y Contratistas")) {
     // ocultar área
     areaBlock.style.display = "none";
 
