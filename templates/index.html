@@ -51,9 +51,8 @@ hr{margin:26px 0;border:none;border-top:1px solid #e5e7eb;}
 <div class="container">
   <div class="card">
 
-    <img src="/static/Banner_Examenes.png" alt="" height="200px" width="750px" style="display: block; margin-left: auto; margin-right: auto; border-radius: 15px;">
-    
-    <h3 style="text-align: center;"></h3>
+    <img src="/static/Banner_Examenes.png" alt="" height="200px" width="750px"
+         style="display:block;margin-left:auto;margin-right:auto;border-radius:15px;">
 
     <label>Nombre del facilitador</label>
     <input id="facilitator" placeholder="Ej: Juan Pérez">
@@ -61,9 +60,34 @@ hr{margin:26px 0;border:none;border-top:1px solid #e5e7eb;}
     <label>Cédula del facilitador</label>
     <input id="facilitator_cedula" placeholder="Ej: 12345678">
 
+    <!-- ✅ SISTEMA ASOCIADA -->
+    <label>Sistema asociada a la formación</label>
+    <div class="choice-pill">
+      <label><input type="checkbox" class="system_chk" value="Seguridad comercial"><span>Seguridad comercial</span></label>
+      <label><input type="checkbox" class="system_chk" value="Calidad"><span>Calidad</span></label>
+      <label><input type="checkbox" class="system_chk" value="Ambiental"><span>Ambiental</span></label>
+      <label><input type="checkbox" class="system_chk" value="Seguridad"><span>Seguridad</span></label>
+      <label><input type="checkbox" class="system_chk" value="Areas de Mantenimiento planeado"><span>Areas de Mantenimiento planeado</span></label>
+      <label><input type="checkbox" class="system_chk" value="MdeO"><span>MdeO</span></label>
+      <label><input type="checkbox" class="system_chk" value="Escuela"><span>Escuela</span></label>
+    </div>
+
+    <!-- ✅ TITULOS DEPENDIENTES -->
+    <div id="system_topic_block" class="hidden">
+      <label style="margin-top:16px;">Título de la formación</label>
+      <select id="system_topic">
+        <option value="" disabled selected>Selecciona…</option>
+      </select>
+      <div class="small">Al seleccionar un título, se coloca automáticamente en “Nombre del curso”.</div>
+    </div>
+
     <label>Nombre del curso</label>
     <input id="course" placeholder="Ej: Curso de Excel">
-    
+
+    <!-- ✅ NUEVO: DESCRIPCIÓN -->
+    <label>Descripción del curso</label>
+    <input id="course_description" placeholder="Ej: Descripción corta del curso (máx 300 caracteres)">
+
     <label>Fecha de la formación</label>
     <input type="date" id="course_date">
 
@@ -88,20 +112,16 @@ hr{margin:26px 0;border:none;border-top:1px solid #e5e7eb;}
         <span>No</span>
       </label>
     </div>
-    <div id="yes_submode_block" class="hidden">
+
+    <div id="direct_link_block" class="hidden">
       <hr>
-      <div id="direct_link_block" class="hidden">
-  <hr>
-      <h3>Registro sin evaluación</h3>
-      <p>Si no necesitas validar conocimientos, usa el formulario estándar:</p>
-          
-      <a href="https://docs.google.com/forms/d/e/1FAIpQLSeQhPUPr_23-KesWKXOmpNqM4Aot_DJZnHbeB-ja5KLywnS5g/viewform"
-         target="_blank"
-         style="display:block;text-align:center;margin-top:12px;font-weight:800;color:#9e1b1c;">
-          Abrir formulario de asistencia
-      </a>
+      <h3>✅ Formación sin evaluación</h3>
+      <div class="small">Si no requieres validar conocimiento, puedes usar el formulario directo:</div>
+      <button type="button" class="secondary" id="btn_open_forms">Abrir formulario</button>
     </div>
 
+    <div id="yes_submode_block" class="hidden">
+      <hr>
       <h3>¿Cómo deseas hacerlo?</h3>
       <div class="choice-pill">
         <label for="sub_create0">
@@ -113,9 +133,7 @@ hr{margin:26px 0;border:none;border-top:1px solid #e5e7eb;}
           <span>Reutilizar evaluación previa</span>
         </label>
       </div>
-      <div class="small">
-        Si elijes reutilizar podras editar o no una evaluación existente.
-      </div>
+
       <div id="create0_block" class="hidden">
         <hr>
         <h3>Preguntas personalizadas</h3>
@@ -123,11 +141,9 @@ hr{margin:26px 0;border:none;border-top:1px solid #e5e7eb;}
 
         <button id="add_question" type="button" class="secondary">Agregar pregunta</button>
         <button id="generate_exam" type="button">Generar evaluaciones</button>
-
         <div id="result"></div>
       </div>
 
-      <!-- ======  ====== -->
       <div id="reuse_block" class="hidden">
         <hr>
         <h3>📚 Exámenes existentes</h3>
@@ -141,9 +157,7 @@ hr{margin:26px 0;border:none;border-top:1px solid #e5e7eb;}
           <button id="btn_reuse" class="secondary" type="button">Reutilizar</button>
           <button id="btn_edit" class="secondary" type="button">Editar examen</button>
         </div>
-        <div class="small">Reutilizar crea un examen nuevo (nuevo link). Editar modifica el mismo examen.</div>
 
-        <!-- Editor -->
         <div id="edit_area" class="hidden">
           <hr>
           <h3>✏️ Editor del examen</h3>
@@ -157,7 +171,7 @@ hr{margin:26px 0;border:none;border-top:1px solid #e5e7eb;}
           <label>Nombre del curso</label>
           <input id="course_edit" placeholder="Ej: Curso de Excel">
 
-          <h3>🧩 Preguntas (se editan TODAS)</h3>
+          <h3>🧩 Preguntas (solo custom)</h3>
           <div id="questions_container_edit"></div>
 
           <button id="add_question_edit" type="button" class="secondary">Agregar pregunta</button>
@@ -171,10 +185,7 @@ hr{margin:26px 0;border:none;border-top:1px solid #e5e7eb;}
     </div>
 
   </div>
-</div> 
-   
-    </div>
-    
+</div>
 
 <script src="/static/creator.js"></script>
 </body>
