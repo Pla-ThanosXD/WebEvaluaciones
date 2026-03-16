@@ -2,6 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
+<link rel="icon" href="/static/icono.png" type="image/png">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ exam.course }}</title>
 
@@ -75,15 +76,19 @@ button:disabled{opacity:.6;cursor:not-allowed;}
 <div class="container">
   <img src="/static/Banner04.png" class="banner_completo" alt="Banner">
   <h1>{{ exam.course }}</h1>
-   <div class="subtitle">
-    Facilitador: <b>{{ exam.facilitator }}</b><br>
-    {% if exam.course_description %}
-      <span style="display:inline-block;margin-top:8px;color:#6b7280;">
-        {{ exam.course_description }}
-      </span>
-    {% endif %}
-  </div>
 
+<div class="subtitle">
+  Facilitador: <b>{{ exam.facilitator }}</b><br>
+  Fecha: <b>{{ exam.course_date or "—" }}</b>
+  {% if exam.course_duration %}
+  {% endif %}
+    <br>
+  {% if exam.course_description %}
+    <span style="display:inline-block;margin-top:8px;color:#6b7280;">
+      {{ exam.course_description }}
+    </span>
+  {% endif %}
+</div>
 
   <label class="main">Nombre completo del asistente</label>
   <input id="nombre" placeholder="Ingrese su nombre">
@@ -94,9 +99,19 @@ button:disabled{opacity:.6;cursor:not-allowed;}
   <label class="main">Cédula del asistente</label>
   <input id="cedula" placeholder="Ej: 123456789">
 
+
   <form id="exam_form">
     {% for q in exam.questions %}
       {% set q_index = loop.index0 %}
+      
+      {% if loop.index == 7 %}
+        <hr style="margin: 40px 0 30px 0; border: none; border-top: 2px dashed #cbd5e1;">
+        <div style="text-align: center; margin-bottom: 30px;">
+          <h2 style="color: #9e1b1c; margin: 0; font-size: 24px;">Preguntas de validación de conocimiento</h2>
+          <p style="color: #6b7280; font-size: 15px; margin-top: 8px;"></p>
+        </div>
+      {% endif %}
+
       <div class="question"
            data-qtype="{{ q.type }}"
            data-qindex="{{ q_index }}"
@@ -141,6 +156,7 @@ button:disabled{opacity:.6;cursor:not-allowed;}
     {% endfor %}
   </form>
 
+
   <button type="button" id="sendBtn">Enviar</button>
 
   <div id="scoreBox" class="scorebox" style="display:none;"></div>
@@ -168,14 +184,13 @@ function showScore(score, total, percent) {
   box.innerHTML = `
     <div style="font-weight:900;font-size:18px;margin-bottom:6px;">Resultado</div>
     <div><b>Preguntas acertadas:</b> ${score} / ${total}</div>
-    <div><b>:</b> ${percent}%</div>
+    ${percent !== "" ? `<div><b>Porcentaje:</b> ${percent}%</div>` : ""}
   `;
 }
 
 function paintFeedback(details) {
   details.forEach(d => {
-   const qEl = document.querySelector(`.question[data-qindex="${d.index}"]`);
-
+    const qEl = document.querySelector(`.question[data-qindex="${d.index}"]`);
     if (!qEl) return;
 
     const fb = document.createElement("div");
@@ -187,14 +202,16 @@ function paintFeedback(details) {
         <div class="fb-title">✅ Correcta</div>
         <div><b>Tu respuesta:</b> ${formatValue(d.user_value)}</div>
       `;
-    } else if (d.is_correct === false) {
+    } 
+    else if (d.is_correct === false) {
       fb.classList.add("fb-bad");
       fb.innerHTML = `
         <div class="fb-title">❌ Incorrecta</div>
         <div><b>Tu respuesta:</b> ${formatValue(d.user_value)}</div>
         <div><b>Correcta:</b> ${formatValue(d.correct_value)}</div>
       `;
-    } else {
+    } 
+    else {
       fb.classList.add("fb-neutral");
       fb.innerHTML = `
         <div class="fb-title">ℹ️ No calificable</div>
@@ -216,7 +233,8 @@ function formatValue(v) {
 }
 
 /* =========================================================
-   ✅ MOSTRAR ÁREA SOLO SI GERENCIA = OPERACIONES
+   ✅ MOSTRAR ÁREA SOLO SI GERENCIA = OPERACIONES o TERCEROS
+   (ARREGLADO: antes tenías dos if seguidos sin llaves)
    ========================================================= */
 function toggleAreaQuestionByGerencia() {
   const all = [...document.querySelectorAll(".question")];
@@ -229,26 +247,27 @@ function toggleAreaQuestionByGerencia() {
   const selected = gerenciaBlock.querySelector('input[type="radio"]:checked');
   const selectedValue = selected ? normalizeText(selected.value) : "";
 
- if (selectedValue !== normalizeText("Gerencia de Operaciones (Planta y Áreas de Logística)"))
-  if (selectedValue !== normalizeText("Terceros y Contratistas")) {
-    // ocultar área
-    areaBlock.style.display = "none";
+  const showArea =
+    selectedValue === normalizeText("Gerencia de Operaciones (Personal de planta y logística)") ||
+    selectedValue === normalizeText("Terceros");
 
-    // limpiar respuestas
+  if (!showArea) {
+    areaBlock.style.display = "none";
     areaBlock.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+
+    const otherInput = areaBlock.querySelector("#area_other_input");
+    if (otherInput) otherInput.value = "", otherInput.style.display = "none";
   } else {
     areaBlock.style.display = "block";
   }
 }
 
-// escuchar cambios para actualizar cuando escojan gerencia
 document.addEventListener("change", (e) => {
   if (e.target && e.target.type === "radio") {
     toggleAreaQuestionByGerencia();
   }
 });
 
-// ejecutar al cargar
 toggleAreaQuestionByGerencia();
 
 /* =========================================================
@@ -256,17 +275,14 @@ toggleAreaQuestionByGerencia();
    ========================================================= */
 function setupAreaOtherInput() {
   const all = [...document.querySelectorAll(".question")];
-
   const areaBlock = all.find(q => normalizeText(q.getAttribute("data-title")) === normalizeText("Área"));
   if (!areaBlock) return;
 
-  // buscar checkbox "Otro"
   const otherCheckbox = [...areaBlock.querySelectorAll('input[type="checkbox"]')]
     .find(cb => normalizeText(cb.value) === normalizeText("Otro"));
 
   if (!otherCheckbox) return;
 
-  // crear input (una sola vez)
   let otherInput = areaBlock.querySelector("#area_other_input");
   if (!otherInput) {
     otherInput = document.createElement("input");
@@ -291,17 +307,14 @@ function setupAreaOtherInput() {
   otherCheckbox.addEventListener("change", toggleOtherInput);
   toggleOtherInput();
 }
-
-// ejecutar al cargar
 setupAreaOtherInput();
-
 
 /* ========================================================= */
 
 document.getElementById("sendBtn").addEventListener("click", submitExam);
 
 async function submitExam() {
-  let nombre = normalizeText(document.getElementById("nombre").value);
+  const nombre = normalizeText(document.getElementById("nombre").value);
   const registro = (document.getElementById("registro").value || "").trim();
   const cedula = (document.getElementById("cedula").value || "").trim();
 
@@ -332,20 +345,18 @@ async function submitExam() {
 
       const checked = [...qBlock.querySelectorAll('input[type="checkbox"]:checked')].map(x => x.value);
       if (!checked.length) return alert(`Pregunta ${i+1} incompleta`);
-          
+
       // ✅ Si está marcado "Otro", concatenar texto
       const otherSelected = checked.some(v => normalizeText(v) === normalizeText("Otro"));
       if (otherSelected) {
         const otherInput = qBlock.querySelector("#area_other_input");
         const otherText = (otherInput?.value || "").trim();
         if (!otherText) return alert("Escribe el texto para la opción 'Otro'.");
-        // reemplazar "Otro" por "Otro: <texto>"
         const idx = checked.findIndex(v => normalizeText(v) === normalizeText("Otro"));
         checked[idx] = `Otro: ${otherText}`;
       }
-      
-      answers.push(checked);
 
+      answers.push(checked);
 
     } else { // text
       const input = qBlock.querySelector('input[type="text"]');
