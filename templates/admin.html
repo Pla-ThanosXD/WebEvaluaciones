@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/static/icono.png" type="image/png">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Administración</title>
+  <style>
+    body{font-family:Segoe UI,Arial,sans-serif;background:#f8fafc;margin:0;padding:30px;background-image:url(/static/fondos.webp);}
+    .wrap{max-width:980px;margin:auto;}
+    .card{background:#fff;border-radius:18px;padding:22px;box-shadow:0 18px 40px rgba(0,0,0,.08);}
+    h1{margin:0 0 8px 0;color:#111827;}
+    .small{color:#6b7280;margin-bottom:18px;}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+    .box{border:1px solid #dde3ea;border-radius:14px;padding:14px;}
+    textarea{width:100%;min-height:280px;border-radius:12px;border:1px solid #dde3ea;padding:12px;font-family:ui-monospace,Consolas,monospace;font-size:13px;}
+    button{padding:12px 14px;border-radius:12px;border:none;background:#111827;color:#fff;font-weight:800;cursor:pointer;}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px;}
+    .ok{color:#16a34a;font-weight:700;}
+    .err{color:#b91c1c;font-weight:700;}
+    a{color:#4f46e5;font-weight:800;text-decoration:none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="row" style="justify-content:space-between;">
+        <div>
+          <h1>Administración</h1>
+          <div class="small">Edita habilitadores y títulos. Se guardan en la pestaña <b>Config</b> del Sheet.</div>
+        </div>
+        <div class="row">
+          <a href="/" style="margin-right:6px;">Volver</a>
+          <a href="/admin/logout">Salir</a>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="box">
+          <h3 style="margin:0 0 8px 0;">system_areas (lista JSON)</h3>
+          <div class="small">Ej: ["Calidad","Seguridad",...]</div>
+          <textarea id="areas_json">{{ (cfg.get("system_areas") or []) | tojson(indent=2) }}</textarea>
+          <div class="row">
+            <button type="button" onclick="saveKey('system_areas','areas_json')">Guardar habilitadores</button>
+          </div>
+        </div>
+
+        <div class="box">
+          <h3 style="margin:0 0 8px 0;">system_topics (objeto JSON)</h3>
+          <div class="small">Ej: {"Calidad":["Manejo de alérgenos",...], "Seguridad":[...]}</div>
+          <textarea id="topics_json">{{ (cfg.get("system_topics") or {}) | tojson(indent=2) }}</textarea>
+          <div class="row">
+            <button type="button" onclick="saveKey('system_topics','topics_json')">Guardar títulos</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:16px;">
+        <span id="msg"></span>
+      </div>
+
+      <div class="small" style="margin-top:10px;">
+        Si el JSON queda inválido, no se guarda. Haz cambios pequeños y guarda.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function saveKey(key, textareaId){
+      const msg = document.getElementById("msg");
+      msg.className = "";
+      msg.textContent = "";
+
+      const raw = document.getElementById(textareaId).value;
+
+      let value;
+      try { value = JSON.parse(raw); }
+      catch(e){
+        msg.className = "err";
+        msg.textContent = "❌ JSON inválido. Revisa comas, comillas y corchetes.";
+        return;
+      }
+
+      try{
+        const res = await fetch("/api/admin/save", {
+          method:"POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ key, value })
+        });
+        const data = await res.json().catch(()=>({}));
+        if(!res.ok){
+          msg.className = "err";
+          msg.textContent = "❌ " + (data.error || "No se pudo guardar");
+          return;
+        }
+        msg.className = "ok";
+        msg.textContent = "✅ Guardado correctamente.";
+      } catch(e){
+        msg.className = "err";
+        msg.textContent = "❌ Error de red o servidor.";
+      }
+    }
+  </script>
+</body>
+</html>
