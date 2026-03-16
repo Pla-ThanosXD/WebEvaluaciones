@@ -1,4 +1,3 @@
-# app.py
 from flask import (
     Flask, render_template, request, jsonify, abort,
     session, redirect
@@ -15,7 +14,6 @@ import os
 import httplib2
 from functools import wraps
 from typing import Any, Dict, List, Tuple, Optional
-from flask import request, jsonify, render_template
 
 app = Flask(__name__)
 
@@ -24,10 +22,10 @@ app = Flask(__name__)
 # =========================================================
 SPREADSHEET_ID = "158KfNlSI4K_Fse5Zm4KpD1WvW_-ZcDsBgsnFGQqT34U"
 
-# Tabs/ranges (IMPORTANTE: arranquen en A)
-SHEET_EXAMS = "Exams!A:M"
+# Tabs/ranges
+SHEET_EXAMS = "Exams!A:N"
 SHEET_RESPONSES = "Responses!A:Q"
-SHEET_CONFIG = "Config!A:B"   # ✅ Config editable (system_areas, system_topics, ui_texts)
+SHEET_CONFIG = "Config!A:B"
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
@@ -47,10 +45,9 @@ DISABLE_SSL_VERIFY = os.getenv("DISABLE_SSL_VERIFY", "0") == "1"
 # ADMIN / SESIÓN
 # =========================================================
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-change-me-please")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "123456789")  # ponla por env var
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "123456789")
 
 def _is_internal_ip(ip: str) -> bool:
-    # Ajusta según tu red. IMPORTANTE: permite 127.0.0.1 para pruebas locales.
     return (
         ip.startswith("10.")
         or ip.startswith("192.168.")
@@ -257,6 +254,10 @@ def get_exam_by_id(service, exam_id: str) -> Optional[Dict[str, Any]]:
 
             questions = DEFAULT_QUESTIONS + (custom_questions if isinstance(custom_questions, list) else [])
 
+            exam_url = safe_get(r, 13, "")
+            if not exam_url:
+                exam_url = f"/exam/{safe_get(r, 0, '')}"
+
             return {
                 "id": safe_get(r, 0, ""),
                 "facilitator": safe_get(r, 1, ""),
@@ -272,6 +273,7 @@ def get_exam_by_id(service, exam_id: str) -> Optional[Dict[str, Any]]:
                 "system_area": safe_get(r, 10, ""),
                 "system_title": safe_get(r, 11, ""),
                 "course_description": safe_get(r, 12, ""),
+                "exam_url": exam_url,
             }
     return None
 
@@ -290,6 +292,11 @@ def list_exams(service) -> List[Dict[str, Any]]:
             exam_id = safe_get(r, 0, "").strip()
             if not exam_id or normalize_text(exam_id) in ("EXAM_ID", "ID"):
                 continue
+
+            exam_url = safe_get(r, 13, "")
+            if not exam_url:
+                exam_url = f"/exam/{exam_id}"
+
             out.append({
                 "id": exam_id,
                 "facilitator": safe_get(r, 1, ""),
@@ -299,6 +306,7 @@ def list_exams(service) -> List[Dict[str, Any]]:
                 "system_area": safe_get(r, 10, ""),
                 "system_title": safe_get(r, 11, ""),
                 "course_date": safe_get(r, 6, ""),
+                "exam_url": exam_url,
             })
     out.reverse()
     return out
@@ -392,7 +400,6 @@ def upload_support_api():
     saved_files = []
     for file in files:
         if file and file.filename:
-            # aquí guardas el archivo
             saved_files.append({
                 "name": file.filename,
                 "url": f"/uploads/{file.filename}"
@@ -414,8 +421,7 @@ def debug_sheets():
     })
 
 # =========================================================
-# API CONFIG PÚBLICA (para creator.js / index.html)
-# Incluye: system_areas, system_topics, ui_texts
+# API CONFIG PÚBLICA
 # =========================================================
 @app.route("/api/config/public", methods=["GET"])
 def api_public_config():
@@ -424,11 +430,11 @@ def api_public_config():
     return jsonify({
         "system_areas": cfg.get("system_areas", []),
         "system_topics": cfg.get("system_topics", {}),
-        "ui_texts": cfg.get("ui_texts", {}),  # ✅ textos editables (labels/placeholders)
+        "ui_texts": cfg.get("ui_texts", {}),
     })
 
 # =========================================================
-# ADMIN LOGIN (modal oculto en banner)
+# ADMIN LOGIN
 # =========================================================
 @app.route("/api/admin/login", methods=["POST"])
 def api_admin_login():
@@ -443,7 +449,6 @@ def api_admin_login():
         return jsonify({"error": "Contraseña incorrecta"}), 401
 
     session["is_admin"] = True
-    # ✅ los mandamos al mismo index (creator) para editar con lápices
     return jsonify({"status": "ok", "redirect": "/creator"})
 
 @app.route("/api/admin/me", methods=["GET"])
@@ -456,8 +461,7 @@ def admin_logout():
     return redirect("/")
 
 # =========================================================
-# ADMIN: actualizar textos UI desde index (lápiz)
-# Guarda en Config key: ui_texts (dict)
+# ADMIN: actualizar textos UI
 # =========================================================
 @app.route("/api/admin/ui_texts/update", methods=["POST"])
 @admin_required
@@ -514,8 +518,6 @@ def api_admin_system_config_save():
 
     return jsonify({"status": "ok"})
 
-
-
 # =========================================================
 # API: EXAMS
 # =========================================================
@@ -527,8 +529,7 @@ def api_exams():
 @app.route("/api/exams/filter", methods=["GET"])
 def api_exams_filter():
     """
-    Filtro exacto por system_area + system_title:
-      /api/exams/filter?system_area=Calidad&system_title=Manejo%20de%20alérgenos
+    Filtro exacto por system_area + system_title
     + filtros opcionales: q, date_from, date_to
     """
     service = get_sheets_service()
@@ -538,8 +539,8 @@ def api_exams_filter():
     system_title = safe_str(request.args.get("system_title"), 220)
 
     q = safe_str(request.args.get("q"), 200)
-    date_from = safe_str(request.args.get("date_from"), 20)  # YYYY-MM-DD
-    date_to = safe_str(request.args.get("date_to"), 20)      # YYYY-MM-DD
+    date_from = safe_str(request.args.get("date_from"), 20)
+    date_to = safe_str(request.args.get("date_to"), 20)
 
     n_area = normalize_text(system_area)
     n_title = normalize_text(system_title)
@@ -581,6 +582,10 @@ def api_exams_filter():
         area = safe_get(r, 10, "")
         title = safe_get(r, 11, "")
         desc = safe_get(r, 12, "")
+        exam_url = safe_get(r, 13, "")
+
+        if not exam_url:
+            exam_url = f"/exam/{exam_id}"
 
         if n_area and normalize_text(area) != n_area:
             continue
@@ -608,6 +613,7 @@ def api_exams_filter():
             "facilitator_email": facilitator_email,
             "system_area": area,
             "system_title": title,
+            "exam_url": exam_url,
         })
 
     out.reverse()
@@ -626,7 +632,6 @@ def api_get_exam(exam_id):
         "facilitator_cedula": exam.get("facilitator_cedula", ""),
         "course": exam.get("course", ""),
         "created_at": exam.get("created_at", ""),
-        # ✅ editor solo edita custom
         "questions": exam.get("custom_questions", []),
         "course_date": exam.get("course_date", ""),
         "course_duration": exam.get("course_duration", ""),
@@ -635,6 +640,7 @@ def api_get_exam(exam_id):
         "system_area": exam.get("system_area", ""),
         "system_title": exam.get("system_title", ""),
         "course_description": exam.get("course_description", ""),
+        "exam_url": exam.get("exam_url", ""),
     })
 
 @app.route("/api/exam/<exam_id>", methods=["PUT"])
@@ -678,7 +684,9 @@ def api_update_exam(exam_id):
     system_title = safe_str(data.get("system_title") or (old.get("system_title") if old else ""), 200)
     course_description = safe_str(data.get("course_description") or (old.get("course_description") if old else ""), 300)
 
-    update_range = f"Exams!A{row}:M{row}"
+    exam_url = request.host_url.rstrip("/") + f"/exam/{exam_id}"
+
+    update_range = f"Exams!A{row}:N{row}"
     service.spreadsheets().values().update(
         spreadsheetId=SPREADSHEET_ID,
         range=update_range,
@@ -696,14 +704,15 @@ def api_update_exam(exam_id):
             facilitator_email,                     # J
             system_area,                           # K
             system_title,                          # L
-            course_description                     # M
+            course_description,                    # M
+            exam_url                               # N
         ]]}
     ).execute()
 
     return jsonify({
         "status": "ok",
         "exam_id": exam_id,
-        "exam_url": request.host_url.rstrip("/") + f"/exam/{exam_id}"
+        "exam_url": exam_url
     })
 
 # =========================================================
@@ -743,6 +752,7 @@ def create_exam():
         validated_custom.append(q)
 
     exam_id = uuid.uuid4().hex[:8]
+    exam_url = request.host_url.rstrip("/") + f"/exam/{exam_id}"
     service = get_sheets_service()
 
     service.spreadsheets().values().append(
@@ -751,25 +761,26 @@ def create_exam():
         valueInputOption="RAW",
         insertDataOption="INSERT_ROWS",
         body={"values": [[
-            exam_id,
-            facilitator,
-            facilitator_cedula,
-            course,
-            datetime.now(UTC).isoformat(),
-            json.dumps(validated_custom, ensure_ascii=False),
-            course_date,
-            course_duration,
-            num_invites,
-            facilitator_email,
-            system_area,
-            system_title,
-            course_description
+            exam_id,                                  # A
+            facilitator,                              # B
+            facilitator_cedula,                       # C
+            course,                                   # D
+            datetime.now(UTC).isoformat(),            # E
+            json.dumps(validated_custom, ensure_ascii=False),  # F
+            course_date,                              # G
+            course_duration,                          # H
+            num_invites,                              # I
+            facilitator_email,                        # J
+            system_area,                              # K
+            system_title,                             # L
+            course_description,                       # M
+            exam_url                                  # N
         ]]}
     ).execute()
 
     return jsonify({
         "exam_id": exam_id,
-        "exam_url": request.host_url.rstrip("/") + f"/exam/{exam_id}"
+        "exam_url": exam_url
     })
 
 # =========================================================
@@ -801,6 +812,7 @@ def duplicate_exam(exam_id):
         return jsonify({"error": "Examen no encontrado"}), 404
 
     new_exam_id = uuid.uuid4().hex[:8]
+    new_exam_url = request.host_url.rstrip("/") + f"/exam/{new_exam_id}"
 
     facilitator = safe_get(old, 1, "")
     facilitator_cedula = safe_get(old, 2, "")
@@ -821,25 +833,26 @@ def duplicate_exam(exam_id):
         valueInputOption="RAW",
         insertDataOption="INSERT_ROWS",
         body={"values": [[
-            new_exam_id,
-            facilitator,
-            facilitator_cedula,
-            course,
-            datetime.now(UTC).isoformat(),
-            questions_json,
-            course_date,
-            course_duration,
-            num_invites,
-            facilitator_email,
-            system_area,
-            system_title,
-            course_description
+            new_exam_id,                    # A
+            facilitator,                    # B
+            facilitator_cedula,             # C
+            course,                         # D
+            datetime.now(UTC).isoformat(),  # E
+            questions_json,                 # F
+            course_date,                    # G
+            course_duration,                # H
+            num_invites,                    # I
+            facilitator_email,              # J
+            system_area,                    # K
+            system_title,                   # L
+            course_description,             # M
+            new_exam_url                    # N
         ]]}
     ).execute()
 
     return jsonify({
         "exam_id": new_exam_id,
-        "exam_url": request.host_url.rstrip("/") + f"/exam/{new_exam_id}"
+        "exam_url": new_exam_url
     })
 
 # =========================================================
