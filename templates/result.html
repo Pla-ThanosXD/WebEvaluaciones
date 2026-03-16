@@ -43,18 +43,18 @@ a{ color:#4f46e5; font-weight:700; }
 
   {% if sub %}
     <div class="row"><span class="badge">✅ Enviado</span></div>
-    <div class="row"><b>Nombre:</b> {{ sub.nombre }}</div>
-    <div class="row"><b>Cédula:</b> {{ sub.cedula }}</div>
-    <div class="row"><b>Puntaje:</b> {{ sub.score }} / {{ sub.total }}</div>
-    <div class="row"><b>Porcentaje:</b> {{ sub.percent }}%</div>
+    <div class="row"><b>Nombre completo del asistente:</b> {{ sub.nombre }}</div>
+    <div class="row"><b>Cédula del asistente:</b> {{ sub.cedula }}</div>
+    <div class="row"><b>Preguntas acertadas:</b> {{ sub.score }} / {{ sub.total }}</div>
+    <div class="row"><b>Total preguntado:</b> {{ sub.percent }}%</div>
     <div class="row" style="margin-top:18px;">
-      <a href="/exam/{{ exam.id }}">Volver al examen</a>
+      <a href="/exam/{{ exam.id }}">Volver a la formación</a>
     </div>
   {% else %}
     <div class="row"><span class="badge">⚠️ No encontrado</span></div>
     <div class="row">No hay envío registrado para esa cédula en este examen.</div>
     <div class="row" style="margin-top:18px;">
-      <a href="/exam/{{ exam.id }}">Ir al examen</a>
+      <a href="/exam/{{ exam.id }}">Ir a la formación</a>
     </div>
   {% endif %}
 </div>
