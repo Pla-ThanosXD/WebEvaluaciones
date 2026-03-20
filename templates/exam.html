@@ -77,18 +77,16 @@ button:disabled{opacity:.6;cursor:not-allowed;}
   <img src="/static/Banner04.png" class="banner_completo" alt="Banner">
   <h1>{{ exam.course }}</h1>
 
-<div class="subtitle">
-  Facilitador: <b>{{ exam.facilitator }}</b><br>
-  Fecha: <b>{{ exam.course_date or "—" }}</b>
-  {% if exam.course_duration %}
-  {% endif %}
+  <div class="subtitle">
+    Facilitador: <b>{{ exam.facilitator }}</b><br>
+    Fecha: <b>{{ exam.course_date or "—" }}</b>
     <br>
-  {% if exam.course_description %}
-    <span style="display:inline-block;margin-top:8px;color:#6b7280;">
-      {{ exam.course_description }}
-    </span>
-  {% endif %}
-</div>
+    {% if exam.course_description %}
+      <span style="display:inline-block;margin-top:8px;color:#6b7280;">
+        {{ exam.course_description }}
+      </span>
+    {% endif %}
+  </div>
 
   <label class="main">Nombre completo del asistente</label>
   <input id="nombre" placeholder="Ingrese su nombre">
@@ -99,16 +97,14 @@ button:disabled{opacity:.6;cursor:not-allowed;}
   <label class="main">Cédula del asistente</label>
   <input id="cedula" placeholder="Ej: 123456789">
 
-
   <form id="exam_form">
     {% for q in exam.questions %}
       {% set q_index = loop.index0 %}
-      
-      {% if loop.index == 7 %}
+
+      {% if loop.index == default_questions_count + 1 %}
         <hr style="margin: 40px 0 30px 0; border: none; border-top: 2px dashed #cbd5e1;">
         <div style="text-align: center; margin-bottom: 30px;">
           <h2 style="color: #9e1b1c; margin: 0; font-size: 24px;">Preguntas de validación de conocimiento</h2>
-          <p style="color: #6b7280; font-size: 15px; margin-top: 8px;"></p>
         </div>
       {% endif %}
 
@@ -119,7 +115,7 @@ button:disabled{opacity:.6;cursor:not-allowed;}
         <b>{{ loop.index }}. {{ q.title }}</b>
 
         {% if q.type == "text" %}
-          <input type="text" class="answer-text" placeholder="Escriba su respuesta">
+          <textarea class="answer-text" placeholder="Escriba su respuesta"></textarea>
 
         {% elif q.type == "true_false" %}
           <label class="option">
@@ -156,9 +152,7 @@ button:disabled{opacity:.6;cursor:not-allowed;}
     {% endfor %}
   </form>
 
-
   <button type="button" id="sendBtn">Enviar</button>
-
   <div id="scoreBox" class="scorebox" style="display:none;"></div>
 </div>
 
@@ -172,7 +166,7 @@ function normalizeText(text) {
 }
 
 function disableAllInputs() {
-  document.querySelectorAll("#exam_form input, #nombre, #registro, #cedula").forEach(el => {
+  document.querySelectorAll("#exam_form input, #exam_form textarea, #nombre, #registro, #cedula").forEach(el => {
     el.disabled = true;
   });
   document.getElementById("sendBtn").disabled = true;
@@ -188,7 +182,15 @@ function showScore(score, total, percent) {
   `;
 }
 
+function formatValue(v) {
+  if (Array.isArray(v)) return v.join(", ");
+  if (v === null || v === undefined) return "";
+  return String(v);
+}
+
 function paintFeedback(details) {
+  document.querySelectorAll(".feedback").forEach(el => el.remove());
+
   details.forEach(d => {
     const qEl = document.querySelector(`.question[data-qindex="${d.index}"]`);
     if (!qEl) return;
@@ -202,16 +204,14 @@ function paintFeedback(details) {
         <div class="fb-title">✅ Correcta</div>
         <div><b>Tu respuesta:</b> ${formatValue(d.user_value)}</div>
       `;
-    } 
-    else if (d.is_correct === false) {
+    } else if (d.is_correct === false) {
       fb.classList.add("fb-bad");
       fb.innerHTML = `
         <div class="fb-title">❌ Incorrecta</div>
         <div><b>Tu respuesta:</b> ${formatValue(d.user_value)}</div>
         <div><b>Correcta:</b> ${formatValue(d.correct_value)}</div>
       `;
-    } 
-    else {
+    } else {
       fb.classList.add("fb-neutral");
       fb.innerHTML = `
         <div class="fb-title">ℹ️ No calificable</div>
@@ -226,16 +226,6 @@ function paintFeedback(details) {
   });
 }
 
-function formatValue(v) {
-  if (Array.isArray(v)) return v.join(", ");
-  if (v === null || v === undefined) return "";
-  return String(v);
-}
-
-/* =========================================================
-   ✅ MOSTRAR ÁREA SOLO SI GERENCIA = OPERACIONES o TERCEROS
-   (ARREGLADO: antes tenías dos if seguidos sin llaves)
-   ========================================================= */
 function toggleAreaQuestionByGerencia() {
   const all = [...document.querySelectorAll(".question")];
 
@@ -256,23 +246,21 @@ function toggleAreaQuestionByGerencia() {
     areaBlock.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
 
     const otherInput = areaBlock.querySelector("#area_other_input");
-    if (otherInput) otherInput.value = "", otherInput.style.display = "none";
+    if (otherInput) {
+      otherInput.value = "";
+      otherInput.style.display = "none";
+    }
   } else {
     areaBlock.style.display = "block";
   }
 }
 
 document.addEventListener("change", (e) => {
-  if (e.target && e.target.type === "radio") {
-    toggleAreaQuestionByGerencia();
-  }
+  if (e.target && e.target.type === "radio") toggleAreaQuestionByGerencia();
 });
 
 toggleAreaQuestionByGerencia();
 
-/* =========================================================
-   ✅ "OTRO" EN ÁREA -> MUESTRA INPUT DE TEXTO
-   ========================================================= */
 function setupAreaOtherInput() {
   const all = [...document.querySelectorAll(".question")];
   const areaBlock = all.find(q => normalizeText(q.getAttribute("data-title")) === normalizeText("Área"));
@@ -309,92 +297,107 @@ function setupAreaOtherInput() {
 }
 setupAreaOtherInput();
 
-/* ========================================================= */
-
 document.getElementById("sendBtn").addEventListener("click", submitExam);
 
 async function submitExam() {
-  const nombre = normalizeText(document.getElementById("nombre").value);
-  const registro = (document.getElementById("registro").value || "").trim();
-  const cedula = (document.getElementById("cedula").value || "").trim();
+  const sendBtn = document.getElementById("sendBtn");
+  sendBtn.disabled = true;
+  sendBtn.textContent = "Enviando...";
 
-  if (!nombre || !registro || !cedula) {
-    alert("Nombre, Registro y cédula obligatorios");
-    return;
-  }
+  try {
+    const nombre = normalizeText(document.getElementById("nombre").value);
+    const registro = (document.getElementById("registro").value || "").trim();
+    const cedula = (document.getElementById("cedula").value || "").trim();
 
-  const answers = [];
-  const blocks = document.querySelectorAll(".question");
+    if (!nombre || !registro || !cedula) {
+      alert("Nombre, Registro y cédula obligatorios");
+      return;
+    }
 
-  for (let i = 0; i < blocks.length; i++) {
-    const qBlock = blocks[i];
-    const qType = qBlock.getAttribute("data-qtype");
+    const answers = [];
+    const blocks = document.querySelectorAll(".question");
 
-    if (qType === "multiple" || qType === "true_false") {
-      const checked = qBlock.querySelector('input[type="radio"]:checked');
-      if (!checked) return alert(`Pregunta ${i+1} incompleta`);
-      answers.push(checked.value);
+    for (let i = 0; i < blocks.length; i++) {
+      const qBlock = blocks[i];
+      const qType = qBlock.getAttribute("data-qtype");
 
-    } else if (qType === "check") {
+      if (qType === "multiple" || qType === "true_false") {
+        const checked = qBlock.querySelector('input[type="radio"]:checked');
+        if (!checked) {
+          alert(`Pregunta ${i+1} incompleta`);
+          return;
+        }
+        answers.push(checked.value);
 
-      // ✅ Si el bloque está oculto, enviar [] y no obligar
-      if (qBlock.style.display === "none") {
-        answers.push([]);
-        continue;
+      } else if (qType === "check") {
+        if (qBlock.style.display === "none") {
+          answers.push([]);
+          continue;
+        }
+
+        const checked = [...qBlock.querySelectorAll('input[type="checkbox"]:checked')].map(x => x.value);
+        if (!checked.length) {
+          alert(`Pregunta ${i+1} incompleta`);
+          return;
+        }
+
+        const otherSelected = checked.some(v => normalizeText(v) === normalizeText("Otro"));
+        if (otherSelected) {
+          const otherInput = qBlock.querySelector("#area_other_input");
+          const otherText = (otherInput?.value || "").trim();
+          if (!otherText) {
+            alert("Escribe el texto para la opción 'Otro'.");
+            return;
+          }
+          const idx = checked.findIndex(v => normalizeText(v) === normalizeText("Otro"));
+          checked[idx] = `Otro: ${otherText}`;
+        }
+
+        answers.push(checked);
+
+      } else {
+        const input = qBlock.querySelector(".answer-text");
+        const val = (input?.value || "").trim();
+        answers.push(val);
       }
+    }
 
-      const checked = [...qBlock.querySelectorAll('input[type="checkbox"]:checked')].map(x => x.value);
-      if (!checked.length) return alert(`Pregunta ${i+1} incompleta`);
+    const res = await fetch("/submit_exam", {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({
+        exam_id:"{{ exam.id }}",
+        nombre,
+        registro,
+        cedula,
+        answers
+      })
+    });
 
-      // ✅ Si está marcado "Otro", concatenar texto
-      const otherSelected = checked.some(v => normalizeText(v) === normalizeText("Otro"));
-      if (otherSelected) {
-        const otherInput = qBlock.querySelector("#area_other_input");
-        const otherText = (otherInput?.value || "").trim();
-        if (!otherText) return alert("Escribe el texto para la opción 'Otro'.");
-        const idx = checked.findIndex(v => normalizeText(v) === normalizeText("Otro"));
-        checked[idx] = `Otro: ${otherText}`;
-      }
+    const data = await res.json().catch(() => ({}));
 
-      answers.push(checked);
+    if (res.ok) {
+      disableAllInputs();
+      showScore(data.score, data.total, data.percent);
+      paintFeedback(data.details || []);
+      alert("Examen enviado correctamente");
+      return;
+    }
 
-    } else { // text
-      const input = qBlock.querySelector('input[type="text"]');
-      const val = (input?.value || "").trim();
-      if (!val) return alert(`Pregunta ${i+1} vacía`);
-      answers.push(val);
+    if (res.status === 409) {
+      disableAllInputs();
+      alert(data.error || "Ya habías enviado este examen.");
+      return;
+    }
+
+    alert("Error: " + (data.error || "No se pudo enviar el examen"));
+  } finally {
+    const scoreVisible = document.getElementById("scoreBox").style.display === "block";
+    if (!scoreVisible) {
+      sendBtn.disabled = false;
+      sendBtn.textContent = "Enviar";
     }
   }
-
-  const res = await fetch("/submit_exam", {
-    method:"POST",
-    headers:{ "Content-Type":"application/json" },
-    body: JSON.stringify({
-      exam_id:"{{ exam.id }}",
-      nombre,
-      registro,
-      cedula,
-      answers
-    })
-  });
-
-  const data = await res.json().catch(() => ({}));
-
-  if (res.ok) {
-    disableAllInputs();
-    showScore(data.score, data.total, data.percent);
-    paintFeedback(data.details || []);
-    alert("Examen enviado correctamente");
-    return;
-  }
-
-  if (res.status === 409) {
-    disableAllInputs();
-    alert(data.error || "Ya habías enviado este examen.");
-    return;
-  }
-
-  alert("Error: " + (data.error || "No se pudo enviar el examen"));
 }
 </script>
 </body>
