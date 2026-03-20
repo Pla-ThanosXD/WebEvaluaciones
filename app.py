@@ -6,6 +6,7 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from google_auth_httplib2 import AuthorizedHttp
 from datetime import datetime, UTC
+from werkzeug.middleware.proxy_fix import ProxyFix
 import json
 import uuid
 import unicodedata
@@ -16,15 +17,15 @@ from functools import wraps
 from typing import Any, Dict, List, Tuple, Optional
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 # =========================================================
 # CONFIG GENERAL
 # =========================================================
 SPREADSHEET_ID = "158KfNlSI4K_Fse5Zm4KpD1WvW_-ZcDsBgsnFGQqT34U"
 
-# Tabs/ranges
 SHEET_EXAMS = "Exams!A:N"
-SHEET_RESPONSES = "Responses!A:Q"
+SHEET_RESPONSES = "Responses!A:S"
 SHEET_CONFIG = "Config!A:B"
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
@@ -37,7 +38,7 @@ POINTS_PER_QUESTION = 1
 GOOGLE_FORMS_URL = "https://docs.google.com/forms/d/e/1FAIpQLSeQhPUPr_23-KesWKXOmpNqM4Aot_DJZnHbeB-ja5KLywnS5g/viewform"
 
 # =========================================================
-# SSL (RED CORPORATIVA)
+# SSL
 # =========================================================
 DISABLE_SSL_VERIFY = os.getenv("DISABLE_SSL_VERIFY", "0") == "1"
 
@@ -47,24 +48,15 @@ DISABLE_SSL_VERIFY = os.getenv("DISABLE_SSL_VERIFY", "0") == "1"
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-change-me-please")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "123456789")
 
-def _is_internal_ip(ip: str) -> bool:
-    return (
-        ip.startswith("10.")
-        or ip.startswith("192.168.")
-        or ip.startswith("172.16.")
-        or ip == "127.0.0.1"
-    )
 
 def admin_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        ip = request.remote_addr or ""
-        if not _is_internal_ip(ip):
-            return jsonify({"error": "No autorizado"}), 403
         if not session.get("is_admin"):
             return jsonify({"error": "No autenticado"}), 401
         return fn(*args, **kwargs)
     return wrapper
+
 
 # =========================================================
 # GOOGLE SERVICE
@@ -82,6 +74,7 @@ def get_sheets_service():
 
     return build("sheets", "v4", credentials=creds, cache_discovery=False)
 
+
 # =========================================================
 # HELPERS
 # =========================================================
@@ -93,12 +86,14 @@ def normalize_text(text: str) -> str:
     text = "".join(c for c in text if unicodedata.category(c) != "Mn")
     return text
 
+
 def safe_str(x: Any, max_len: int = 300) -> str:
     if x is None:
         return ""
     if not isinstance(x, str):
         x = str(x)
     return x.strip()[:max_len]
+
 
 def safe_list_of_str(x: Any, item_max_len: int = 120, max_items: int = 50) -> List[str]:
     if not isinstance(x, list):
@@ -110,6 +105,7 @@ def safe_list_of_str(x: Any, item_max_len: int = 120, max_items: int = 50) -> Li
             out.append(s)
     return out
 
+
 def safe_get(row: List[Any], idx: int, default: str = "") -> str:
     if not isinstance(row, list):
         return default
@@ -117,12 +113,18 @@ def safe_get(row: List[Any], idx: int, default: str = "") -> str:
         return default
     return safe_str(row[idx], 500)
 
+
 # =========================================================
-# DEFAULT QUESTIONS (FIJAS)
+# PREGUNTAS FIJAS
 # =========================================================
 DEFAULT_QUESTIONS: List[Dict[str, Any]] = [
-    {"title": "Turno", "type": "multiple", "options": ["Turno 1", "Turno 2", "Turno 3", "Turno 4"], "scored": False},
-
+    {
+        "title": "Turno",
+        "type": "multiple",
+        "options": ["Turno 1", "Turno 2", "Turno 3", "Turno 4"],
+        "scored": False,
+        "admin_edit_options": False
+    },
     {
         "title": "Gerencia",
         "type": "multiple",
@@ -135,9 +137,9 @@ DEFAULT_QUESTIONS: List[Dict[str, Any]] = [
             "Gerencia de Gestión Humana",
             "Terceros"
         ],
-        "scored": False
+        "scored": False,
+        "admin_edit_options": True
     },
-
     {
         "title": "Área",
         "type": "check",
@@ -147,20 +149,123 @@ DEFAULT_QUESTIONS: List[Dict[str, Any]] = [
             "Horno 9", "Horno 10", "Horno 11", "Horno 12", "Horno 18",
             "Wafers", "Otro"
         ],
-        "scored": False
+        "scored": False,
+        "admin_edit_options": True
     },
-
-    {"title": "¿Nivel de conocimiento del tema de la formación?", "type": "multiple", "options": ["Sin conocimiento", "Básico", "Experto", "Enseña"], "scored": False},
-    {"title": "De una escala de 1 a 5 cómo calificas el entrenamiento proporcionado por el Instructor.", "type": "multiple", "options": ["1", "2", "3", "4", "5"], "scored": False},
-    {"title": "Tienes alguna sugerencia, aporte o comentarios sobre el entrenamiento recibido?", "type": "text", "scored": False},
+    {
+        "title": "¿Cómo calificarías tu nivel de conocimiento sobre el tema antes de iniciar la formación?",
+        "type": "multiple",
+        "options": ["1", "2", "3", "4", "5"],
+        "scored": False,
+        "admin_edit_options": True
+    },
+    {
+        "title": "¿Cómo calificas tu nivel de conocimiento después de haber recibido la formación?",
+        "type": "multiple",
+        "options": ["Sin conocimiento", "Básico", "Experto", "Enseña"],
+        "scored": False,
+        "admin_edit_options": True
+    },
+    {
+        "title": "De una escala de 1 a 5 cómo calificas el entrenamiento proporcionado por el Instructor.",
+        "type": "multiple",
+        "options": ["1", "2", "3", "4", "5"],
+        "scored": False,
+        "admin_edit_options": True
+    },
+    {
+        "title": "Tienes alguna sugerencia, aporte o comentarios sobre el entrenamiento recibido?",
+        "type": "text",
+        "scored": False,
+        "admin_edit_options": False
+    },
 ]
+
+
+# =========================================================
+# CONFIG EN SHEETS
+# =========================================================
+def load_config(service) -> Dict[str, Any]:
+    rows = service.spreadsheets().values().get(
+        spreadsheetId=SPREADSHEET_ID,
+        range=SHEET_CONFIG
+    ).execute().get("values", [])
+
+    cfg: Dict[str, Any] = {}
+    for r in rows:
+        if len(r) < 2:
+            continue
+        key = safe_str(r[0], 80)
+        raw = safe_str(r[1], 50000)
+        if not key:
+            continue
+        try:
+            cfg[key] = json.loads(raw) if raw else None
+        except Exception:
+            cfg[key] = raw
+    return cfg
+
+
+def save_config_key(service, key: str, value: Any) -> None:
+    rows = service.spreadsheets().values().get(
+        spreadsheetId=SPREADSHEET_ID,
+        range=SHEET_CONFIG
+    ).execute().get("values", [])
+
+    row_index = None
+    for i, r in enumerate(rows, start=1):
+        if len(r) >= 1 and safe_str(r[0], 80) == key:
+            row_index = i
+            break
+
+    value_json = json.dumps(value, ensure_ascii=False)
+
+    if row_index is None:
+        service.spreadsheets().values().append(
+            spreadsheetId=SPREADSHEET_ID,
+            range=SHEET_CONFIG,
+            valueInputOption="RAW",
+            insertDataOption="INSERT_ROWS",
+            body={"values": [[key, value_json]]}
+        ).execute()
+    else:
+        service.spreadsheets().values().update(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"Config!A{row_index}:B{row_index}",
+            valueInputOption="RAW",
+            body={"values": [[key, value_json]]}
+        ).execute()
+
+
+def get_default_questions(service=None) -> List[Dict[str, Any]]:
+    questions = [dict(q) for q in DEFAULT_QUESTIONS]
+
+    if service is None:
+        return questions
+
+    cfg = load_config(service)
+    overrides = cfg.get("default_question_overrides", {})
+
+    if not isinstance(overrides, dict):
+        return questions
+
+    for q in questions:
+        if not q.get("admin_edit_options"):
+            continue
+
+        title = safe_str(q.get("title"), 300)
+        override_options = overrides.get(title)
+
+        if q.get("type") in ("multiple", "check") and isinstance(override_options, list):
+            clean_opts = [safe_str(x, 200) for x in override_options if safe_str(x, 200)]
+            if len(clean_opts) >= 2:
+                q["options"] = clean_opts
+
+    return questions
+
 
 # =========================================================
 # VALIDATE QUESTIONS
-# Tipos: text, multiple, check, true_false
-# scored=True => vale 1 punto y requiere correct
-# scored=False => no calificable
-# true_false siempre es calificable (1 punto) y requiere correct
 # =========================================================
 def validate_question(q: Dict[str, Any]) -> Tuple[bool, str]:
     if not isinstance(q, dict):
@@ -222,11 +327,11 @@ def validate_question(q: Dict[str, Any]) -> Tuple[bool, str]:
         q.pop("correct", None)
         return True, ""
 
-    # text
     q["options"] = []
     q["scored"] = False
     q.pop("correct", None)
     return True, ""
+
 
 # =========================================================
 # SHEETS HELPERS
@@ -237,14 +342,18 @@ def _load_exams_rows(service) -> List[List[str]]:
         range=SHEET_EXAMS
     ).execute().get("values", [])
 
+
 def _load_responses_rows(service) -> List[List[str]]:
     return service.spreadsheets().values().get(
         spreadsheetId=SPREADSHEET_ID,
         range=SHEET_RESPONSES
     ).execute().get("values", [])
 
+
 def get_exam_by_id(service, exam_id: str) -> Optional[Dict[str, Any]]:
     rows = _load_exams_rows(service)
+    default_questions = get_default_questions(service)
+
     for r in rows:
         if len(r) >= 1 and safe_get(r, 0, "") == exam_id:
             try:
@@ -252,11 +361,10 @@ def get_exam_by_id(service, exam_id: str) -> Optional[Dict[str, Any]]:
             except Exception:
                 custom_questions = []
 
-            questions = DEFAULT_QUESTIONS + (custom_questions if isinstance(custom_questions, list) else [])
+            if not isinstance(custom_questions, list):
+                custom_questions = []
 
-            exam_url = safe_get(r, 13, "")
-            if not exam_url:
-                exam_url = f"/exam/{safe_get(r, 0, '')}"
+            questions = default_questions + custom_questions
 
             return {
                 "id": safe_get(r, 0, ""),
@@ -265,7 +373,8 @@ def get_exam_by_id(service, exam_id: str) -> Optional[Dict[str, Any]]:
                 "course": safe_get(r, 3, ""),
                 "created_at": safe_get(r, 4, ""),
                 "questions": questions,
-                "custom_questions": custom_questions if isinstance(custom_questions, list) else [],
+                "default_questions": default_questions,
+                "custom_questions": custom_questions,
                 "course_date": safe_get(r, 6, ""),
                 "course_duration": safe_get(r, 7, ""),
                 "num_invites": safe_get(r, 8, ""),
@@ -273,9 +382,10 @@ def get_exam_by_id(service, exam_id: str) -> Optional[Dict[str, Any]]:
                 "system_area": safe_get(r, 10, ""),
                 "system_title": safe_get(r, 11, ""),
                 "course_description": safe_get(r, 12, ""),
-                "exam_url": exam_url,
+                "exam_url": safe_get(r, 13, ""),
             }
     return None
+
 
 def has_submission(service, exam_id: str, cedula: str) -> bool:
     rows = _load_responses_rows(service)
@@ -283,6 +393,7 @@ def has_submission(service, exam_id: str, cedula: str) -> bool:
         if len(r) >= 4 and safe_get(r, 0, "") == exam_id and safe_get(r, 3, "") == cedula:
             return True
     return False
+
 
 def list_exams(service) -> List[Dict[str, Any]]:
     rows = _load_exams_rows(service)
@@ -292,11 +403,6 @@ def list_exams(service) -> List[Dict[str, Any]]:
             exam_id = safe_get(r, 0, "").strip()
             if not exam_id or normalize_text(exam_id) in ("EXAM_ID", "ID"):
                 continue
-
-            exam_url = safe_get(r, 13, "")
-            if not exam_url:
-                exam_url = f"/exam/{exam_id}"
-
             out.append({
                 "id": exam_id,
                 "facilitator": safe_get(r, 1, ""),
@@ -306,70 +412,21 @@ def list_exams(service) -> List[Dict[str, Any]]:
                 "system_area": safe_get(r, 10, ""),
                 "system_title": safe_get(r, 11, ""),
                 "course_date": safe_get(r, 6, ""),
-                "exam_url": exam_url,
+                "exam_url": safe_get(r, 13, ""),
             })
     out.reverse()
     return out
 
-def find_exam_row_index(service, exam_id: str) -> Optional[int]:
-    rows = _load_exams_rows(service)
-    for idx, r in enumerate(rows, start=1):
-        if len(r) >= 1 and safe_get(r, 0, "") == exam_id:
-            return idx
-    return None
 
-# =========================================================
-# CONFIG (ADMIN) EN SHEETS
-# =========================================================
-def load_config(service) -> Dict[str, Any]:
-    rows = service.spreadsheets().values().get(
-        spreadsheetId=SPREADSHEET_ID,
-        range=SHEET_CONFIG
-    ).execute().get("values", [])
-
-    cfg: Dict[str, Any] = {}
-    for r in rows:
-        if len(r) < 2:
-            continue
-        key = safe_str(r[0], 80)
-        raw = safe_str(r[1], 50000)
-        if not key:
-            continue
-        try:
-            cfg[key] = json.loads(raw) if raw else None
-        except Exception:
-            cfg[key] = raw
-    return cfg
-
-def save_config_key(service, key: str, value: Any) -> None:
-    rows = service.spreadsheets().values().get(
-        spreadsheetId=SPREADSHEET_ID,
-        range=SHEET_CONFIG
-    ).execute().get("values", [])
-
-    row_index = None
-    for i, r in enumerate(rows, start=1):
-        if len(r) >= 1 and safe_str(r[0], 80) == key:
-            row_index = i
+def answer_by_title(questions: List[Dict[str, Any]], answers: List[Any], title: str, default: Any = "") -> Any:
+    wanted = normalize_text(title)
+    for i, q in enumerate(questions):
+        if normalize_text(safe_str(q.get("title"), 300)) == wanted:
+            if 0 <= i < len(answers):
+                return answers[i]
             break
+    return default
 
-    value_json = json.dumps(value, ensure_ascii=False)
-
-    if row_index is None:
-        service.spreadsheets().values().append(
-            spreadsheetId=SPREADSHEET_ID,
-            range=SHEET_CONFIG,
-            valueInputOption="RAW",
-            insertDataOption="INSERT_ROWS",
-            body={"values": [[key, value_json]]}
-        ).execute()
-    else:
-        service.spreadsheets().values().update(
-            spreadsheetId=SPREADSHEET_ID,
-            range=f"Config!A{row_index}:B{row_index}",
-            valueInputOption="RAW",
-            body={"values": [[key, value_json]]}
-        ).execute()
 
 # =========================================================
 # ROUTES (UI)
@@ -378,13 +435,16 @@ def save_config_key(service, key: str, value: Any) -> None:
 def index():
     return render_template("home.html")
 
+
 @app.route("/creator")
 def creator():
     return render_template("index.html")
 
+
 @app.route("/upload_support", methods=["GET"])
 def upload_support_page():
     return render_template("upload_support.html")
+
 
 @app.route("/api/upload_support", methods=["POST"])
 def upload_support_api():
@@ -407,8 +467,9 @@ def upload_support_api():
 
     return jsonify({"files": saved_files}), 200
 
+
 # =========================================================
-# DEBUG (OPCIONAL)
+# DEBUG
 # =========================================================
 @app.route("/debug/sheets")
 def debug_sheets():
@@ -417,8 +478,10 @@ def debug_sheets():
         "SHEET_RESPONSES": SHEET_RESPONSES,
         "SHEET_CONFIG": SHEET_CONFIG,
         "spreadsheet_id": SPREADSHEET_ID,
-        "disable_ssl_verify": DISABLE_SSL_VERIFY
+        "disable_ssl_verify": DISABLE_SSL_VERIFY,
+        "is_admin": bool(session.get("is_admin"))
     })
+
 
 # =========================================================
 # API CONFIG PÚBLICA
@@ -433,15 +496,12 @@ def api_public_config():
         "ui_texts": cfg.get("ui_texts", {}),
     })
 
+
 # =========================================================
 # ADMIN LOGIN
 # =========================================================
 @app.route("/api/admin/login", methods=["POST"])
 def api_admin_login():
-    ip = request.remote_addr or ""
-    if not _is_internal_ip(ip):
-        return jsonify({"error": "No autorizado"}), 403
-
     data = request.get_json(force=True) or {}
     pwd = safe_str(data.get("password"), 200)
 
@@ -449,16 +509,20 @@ def api_admin_login():
         return jsonify({"error": "Contraseña incorrecta"}), 401
 
     session["is_admin"] = True
+    session.permanent = True
     return jsonify({"status": "ok", "redirect": "/creator"})
+
 
 @app.route("/api/admin/me", methods=["GET"])
 def api_admin_me():
     return jsonify({"is_admin": bool(session.get("is_admin"))})
 
+
 @app.route("/admin/logout")
 def admin_logout():
     session.clear()
-    return redirect("/")
+    return redirect("/creator")
+
 
 # =========================================================
 # ADMIN: actualizar textos UI
@@ -485,6 +549,7 @@ def api_admin_ui_texts_update():
     ui[key] = value
     save_config_key(service, "ui_texts", ui)
     return jsonify({"status": "ok"})
+
 
 @app.route("/api/admin/system_config/save", methods=["POST"])
 @admin_required
@@ -518,6 +583,76 @@ def api_admin_system_config_save():
 
     return jsonify({"status": "ok"})
 
+
+# =========================================================
+# ADMIN: editar opciones de preguntas fijas
+# =========================================================
+@app.route("/api/admin/default_questions/options", methods=["GET"])
+@admin_required
+def api_admin_default_questions_get():
+    service = get_sheets_service()
+    questions = get_default_questions(service)
+
+    out = []
+    for q in questions:
+        if q.get("admin_edit_options"):
+            out.append({
+                "title": q.get("title"),
+                "type": q.get("type"),
+                "options": q.get("options", [])
+            })
+
+    return jsonify({"questions": out})
+
+
+@app.route("/api/admin/default_questions/options", methods=["POST"])
+@admin_required
+def api_admin_default_questions_save():
+    data = request.get_json(force=True) or {}
+    items = data.get("questions", [])
+
+    if not isinstance(items, list):
+        return jsonify({"error": "Formato inválido"}), 400
+
+    editable_map = {
+        safe_str(q.get("title"), 300): q
+        for q in DEFAULT_QUESTIONS
+        if q.get("admin_edit_options")
+    }
+
+    overrides: Dict[str, List[str]] = {}
+
+    for item in items:
+        if not isinstance(item, dict):
+            return jsonify({"error": "Cada elemento debe ser un objeto"}), 400
+
+        title = safe_str(item.get("title"), 300)
+        options = item.get("options", [])
+
+        if title not in editable_map:
+            return jsonify({"error": f"Pregunta no editable: {title}"}), 400
+
+        original = editable_map[title]
+        if original.get("type") not in ("multiple", "check"):
+            continue
+
+        if not isinstance(options, list):
+            return jsonify({"error": f"Opciones inválidas en {title}"}), 400
+
+        clean_opts = [safe_str(x, 200) for x in options if safe_str(x, 200)]
+        if len(clean_opts) < 2:
+            return jsonify({"error": f"{title} requiere mínimo 2 opciones"}), 400
+        if len(clean_opts) > 50:
+            return jsonify({"error": f"{title} tiene demasiadas opciones (máx 50)"}), 400
+
+        overrides[title] = clean_opts
+
+    service = get_sheets_service()
+    save_config_key(service, "default_question_overrides", overrides)
+
+    return jsonify({"status": "ok"})
+
+
 # =========================================================
 # API: EXAMS
 # =========================================================
@@ -526,18 +661,14 @@ def api_exams():
     service = get_sheets_service()
     return jsonify({"exams": list_exams(service)})
 
+
 @app.route("/api/exams/filter", methods=["GET"])
 def api_exams_filter():
-    """
-    Filtro exacto por system_area + system_title
-    + filtros opcionales: q, date_from, date_to
-    """
     service = get_sheets_service()
     rows = _load_exams_rows(service)
 
     system_area = safe_str(request.args.get("system_area"), 120)
     system_title = safe_str(request.args.get("system_title"), 220)
-
     q = safe_str(request.args.get("q"), 200)
     date_from = safe_str(request.args.get("date_from"), 20)
     date_to = safe_str(request.args.get("date_to"), 20)
@@ -574,7 +705,6 @@ def api_exams_filter():
         fac_ced = safe_get(r, 2, "")
         course = safe_get(r, 3, "")
         created_at = safe_get(r, 4, "")
-
         course_date = safe_get(r, 6, "")
         course_duration = safe_get(r, 7, "")
         num_invites = safe_get(r, 8, "")
@@ -584,11 +714,9 @@ def api_exams_filter():
         desc = safe_get(r, 12, "")
         exam_url = safe_get(r, 13, "")
 
-        if not exam_url:
-            exam_url = f"/exam/{exam_id}"
-
         if n_area and normalize_text(area) != n_area:
             continue
+
         if n_title and normalize_text(title) != n_title:
             continue
 
@@ -619,6 +747,7 @@ def api_exams_filter():
     out.reverse()
     return jsonify({"exams": out})
 
+
 @app.route("/api/exam/<exam_id>", methods=["GET"])
 def api_get_exam(exam_id):
     service = get_sheets_service()
@@ -643,77 +772,6 @@ def api_get_exam(exam_id):
         "exam_url": exam.get("exam_url", ""),
     })
 
-@app.route("/api/exam/<exam_id>", methods=["PUT"])
-def api_update_exam(exam_id):
-    data = request.get_json(force=True) or {}
-
-    exam_id = safe_str(exam_id, 20)
-    facilitator = normalize_text(data.get("facilitator"))
-    facilitator_cedula = safe_str(data.get("facilitator_cedula"), 15)
-    course = safe_str(data.get("course"), 200)
-    questions_in = data.get("questions", [])
-
-    if not facilitator or not facilitator_cedula or not course:
-        return jsonify({"error": "Datos incompletos"}), 400
-    if not CEDULA_RE.match(facilitator_cedula):
-        return jsonify({"error": "Cédula del facilitador inválida (solo números, 5 a 15 dígitos)"}), 400
-    if not isinstance(questions_in, list):
-        return jsonify({"error": "Debes enviar la lista de preguntas"}), 400
-
-    validated: List[Dict[str, Any]] = []
-    for q in questions_in:
-        ok, msg = validate_question(q)
-        if not ok:
-            return jsonify({"error": f"Pregunta inválida: {msg}"}), 400
-        validated.append(q)
-
-    service = get_sheets_service()
-    row = find_exam_row_index(service, exam_id)
-    if not row:
-        return jsonify({"error": "Examen no encontrado"}), 404
-
-    old = get_exam_by_id(service, exam_id)
-    created_at = old.get("created_at") if old else datetime.now(UTC).isoformat()
-
-    course_date = safe_str(data.get("course_date") or (old.get("course_date") if old else ""), 30)
-    course_duration = safe_str(data.get("course_duration") or (old.get("course_duration") if old else ""), 20)
-    num_invites = safe_str(data.get("num_invites") or (old.get("num_invites") if old else ""), 20)
-    facilitator_email = safe_str(data.get("facilitator_email") or (old.get("facilitator_email") if old else ""), 120)
-
-    system_area = safe_str(data.get("system_area") or (old.get("system_area") if old else ""), 80)
-    system_title = safe_str(data.get("system_title") or (old.get("system_title") if old else ""), 200)
-    course_description = safe_str(data.get("course_description") or (old.get("course_description") if old else ""), 300)
-
-    exam_url = request.host_url.rstrip("/") + f"/exam/{exam_id}"
-
-    update_range = f"Exams!A{row}:N{row}"
-    service.spreadsheets().values().update(
-        spreadsheetId=SPREADSHEET_ID,
-        range=update_range,
-        valueInputOption="RAW",
-        body={"values": [[
-            exam_id,                               # A
-            facilitator,                           # B
-            facilitator_cedula,                    # C
-            course,                                # D
-            created_at,                            # E
-            json.dumps(validated, ensure_ascii=False),  # F
-            course_date,                           # G
-            course_duration,                       # H
-            num_invites,                           # I
-            facilitator_email,                     # J
-            system_area,                           # K
-            system_title,                          # L
-            course_description,                    # M
-            exam_url                               # N
-        ]]}
-    ).execute()
-
-    return jsonify({
-        "status": "ok",
-        "exam_id": exam_id,
-        "exam_url": exam_url
-    })
 
 # =========================================================
 # CREATE EXAM
@@ -737,8 +795,8 @@ def create_exam():
 
     custom_questions = data.get("questions", [])
 
-    if not facilitator or not facilitator_cedula or not course:
-        return jsonify({"error": "Datos incompletos"}), 400
+    if not facilitator or not facilitator_cedula or not course or not course_description:
+        return jsonify({"error": "Datos incompletos. La descripción del curso es obligatoria."}), 400
     if not CEDULA_RE.match(facilitator_cedula):
         return jsonify({"error": "Cédula del facilitador inválida (solo números, 5 a 15 dígitos)"}), 400
     if not isinstance(custom_questions, list):
@@ -761,20 +819,20 @@ def create_exam():
         valueInputOption="RAW",
         insertDataOption="INSERT_ROWS",
         body={"values": [[
-            exam_id,                                  # A
-            facilitator,                              # B
-            facilitator_cedula,                       # C
-            course,                                   # D
-            datetime.now(UTC).isoformat(),            # E
-            json.dumps(validated_custom, ensure_ascii=False),  # F
-            course_date,                              # G
-            course_duration,                          # H
-            num_invites,                              # I
-            facilitator_email,                        # J
-            system_area,                              # K
-            system_title,                             # L
-            course_description,                       # M
-            exam_url                                  # N
+            exam_id,
+            facilitator,
+            facilitator_cedula,
+            course,
+            datetime.now(UTC).isoformat(),
+            json.dumps(validated_custom, ensure_ascii=False),
+            course_date,
+            course_duration,
+            num_invites,
+            facilitator_email,
+            system_area,
+            system_title,
+            course_description,
+            exam_url
         ]]}
     ).execute()
 
@@ -783,22 +841,32 @@ def create_exam():
         "exam_url": exam_url
     })
 
-# =========================================================
-# SHOW EXAM (UI)
-# =========================================================
-@app.route("/exam/<exam_id>")
-def show_exam(exam_id):
-    service = get_sheets_service()
-    exam = get_exam_by_id(service, safe_str(exam_id, 20))
-    if not exam:
-        abort(404)
-    return render_template("exam.html", exam=exam, forms_url=GOOGLE_FORMS_URL)
 
 # =========================================================
-# DUPLICATE EXAM
+# REUTILIZAR SOLO PREGUNTAS Y DESCRIPCIÓN
 # =========================================================
 @app.route("/duplicate_exam/<exam_id>", methods=["POST"])
 def duplicate_exam(exam_id):
+    data = request.get_json(force=True) or {}
+
+    facilitator = normalize_text(data.get("facilitator"))
+    facilitator_cedula = safe_str(data.get("facilitator_cedula"), 15)
+    course = safe_str(data.get("course"), 200)
+
+    course_date = safe_str(data.get("course_date"), 30)
+    course_duration = safe_str(data.get("course_duration"), 20)
+    num_invites = safe_str(data.get("num_invites"), 20)
+    facilitator_email = safe_str(data.get("facilitator_email"), 120)
+
+    system_area = safe_str(data.get("system_area"), 80)
+    system_title = safe_str(data.get("system_title"), 200)
+
+    if not facilitator or not facilitator_cedula or not course:
+        return jsonify({"error": "Datos incompletos"}), 400
+
+    if not CEDULA_RE.match(facilitator_cedula):
+        return jsonify({"error": "Cédula del facilitador inválida (solo números, 5 a 15 dígitos)"}), 400
+
     service = get_sheets_service()
     rows = _load_exams_rows(service)
 
@@ -809,23 +877,13 @@ def duplicate_exam(exam_id):
             break
 
     if not old:
-        return jsonify({"error": "Examen no encontrado"}), 404
+        return jsonify({"error": "Formación no encontrada"}), 404
+
+    questions_json = safe_get(old, 5, "[]")
+    course_description = safe_get(old, 12, "")
 
     new_exam_id = uuid.uuid4().hex[:8]
     new_exam_url = request.host_url.rstrip("/") + f"/exam/{new_exam_id}"
-
-    facilitator = safe_get(old, 1, "")
-    facilitator_cedula = safe_get(old, 2, "")
-    course = safe_get(old, 3, "")
-    questions_json = safe_get(old, 5, "[]")
-
-    course_date = safe_get(old, 6, "")
-    course_duration = safe_get(old, 7, "")
-    num_invites = safe_get(old, 8, "")
-    facilitator_email = safe_get(old, 9, "")
-    system_area = safe_get(old, 10, "")
-    system_title = safe_get(old, 11, "")
-    course_description = safe_get(old, 12, "")
 
     service.spreadsheets().values().append(
         spreadsheetId=SPREADSHEET_ID,
@@ -833,27 +891,129 @@ def duplicate_exam(exam_id):
         valueInputOption="RAW",
         insertDataOption="INSERT_ROWS",
         body={"values": [[
-            new_exam_id,                    # A
-            facilitator,                    # B
-            facilitator_cedula,             # C
-            course,                         # D
-            datetime.now(UTC).isoformat(),  # E
-            questions_json,                 # F
-            course_date,                    # G
-            course_duration,                # H
-            num_invites,                    # I
-            facilitator_email,              # J
-            system_area,                    # K
-            system_title,                   # L
-            course_description,             # M
-            new_exam_url                    # N
+            new_exam_id,
+            facilitator,
+            facilitator_cedula,
+            course,
+            datetime.now(UTC).isoformat(),
+            questions_json,
+            course_date,
+            course_duration,
+            num_invites,
+            facilitator_email,
+            system_area,
+            system_title,
+            course_description,
+            new_exam_url
         ]]}
     ).execute()
 
     return jsonify({
         "exam_id": new_exam_id,
-        "exam_url": new_exam_url
+        "exam_url": new_exam_url,
+        "course_description": course_description
     })
+
+
+# =========================================================
+# UPDATE EXAM (ADMIN)
+# =========================================================
+@app.route("/api/exam/<exam_id>", methods=["PUT"])
+@admin_required
+def api_update_exam(exam_id):
+    data = request.get_json(force=True) or {}
+
+    exam_id = safe_str(exam_id, 20)
+    facilitator = normalize_text(data.get("facilitator"))
+    facilitator_cedula = safe_str(data.get("facilitator_cedula"), 15)
+    course = safe_str(data.get("course"), 200)
+    questions_in = data.get("questions", [])
+
+    if not CEDULA_RE.match(facilitator_cedula):
+        return jsonify({"error": "Cédula del facilitador inválida (solo números, 5 a 15 dígitos)"}), 400
+    if not isinstance(questions_in, list):
+        return jsonify({"error": "Debes enviar la lista de preguntas"}), 400
+
+    service = get_sheets_service()
+    row = None
+    rows = _load_exams_rows(service)
+    for idx, r in enumerate(rows, start=1):
+        if len(r) >= 1 and safe_get(r, 0, "") == exam_id:
+            row = idx
+            break
+
+    if not row:
+        return jsonify({"error": "Examen no encontrado"}), 404
+
+    old = get_exam_by_id(service, exam_id)
+    created_at = old.get("created_at") if old else datetime.now(UTC).isoformat()
+
+    course_date = safe_str(data.get("course_date") or (old.get("course_date") if old else ""), 30)
+    course_duration = safe_str(data.get("course_duration") or (old.get("course_duration") if old else ""), 20)
+    num_invites = safe_str(data.get("num_invites") or (old.get("num_invites") if old else ""), 20)
+    facilitator_email = safe_str(data.get("facilitator_email") or (old.get("facilitator_email") if old else ""), 120)
+    system_area = safe_str(data.get("system_area") or (old.get("system_area") if old else ""), 80)
+    system_title = safe_str(data.get("system_title") or (old.get("system_title") if old else ""), 200)
+    course_description = safe_str(data.get("course_description") or (old.get("course_description") if old else ""), 300)
+
+    if not facilitator or not facilitator_cedula or not course or not course_description:
+        return jsonify({"error": "Datos incompletos. La descripción del curso es obligatoria."}), 400
+
+    validated: List[Dict[str, Any]] = []
+    for q in questions_in:
+        ok, msg = validate_question(q)
+        if not ok:
+            return jsonify({"error": f"Pregunta inválida: {msg}"}), 400
+        validated.append(q)
+
+    exam_url = request.host_url.rstrip("/") + f"/exam/{exam_id}"
+
+    update_range = f"Exams!A{row}:N{row}"
+    service.spreadsheets().values().update(
+        spreadsheetId=SPREADSHEET_ID,
+        range=update_range,
+        valueInputOption="RAW",
+        body={"values": [[
+            exam_id,
+            facilitator,
+            facilitator_cedula,
+            course,
+            created_at,
+            json.dumps(validated, ensure_ascii=False),
+            course_date,
+            course_duration,
+            num_invites,
+            facilitator_email,
+            system_area,
+            system_title,
+            course_description,
+            exam_url
+        ]]}
+    ).execute()
+
+    return jsonify({
+        "status": "ok",
+        "exam_id": exam_id,
+        "exam_url": exam_url
+    })
+
+
+# =========================================================
+# SHOW EXAM
+# =========================================================
+@app.route("/exam/<exam_id>")
+def show_exam(exam_id):
+    service = get_sheets_service()
+    exam = get_exam_by_id(service, safe_str(exam_id, 20))
+    if not exam:
+        abort(404)
+    return render_template(
+        "exam.html",
+        exam=exam,
+        forms_url=GOOGLE_FORMS_URL,
+        default_questions_count=len(get_default_questions(service))
+    )
+
 
 # =========================================================
 # SUBMIT EXAM
@@ -883,9 +1043,6 @@ def submit_exam():
         return jsonify({"error": "Examen no encontrado"}), 404
 
     questions = exam.get("questions", [])
-    custom_questions = exam.get("custom_questions", [])
-    fixed_count = len(DEFAULT_QUESTIONS)
-
     if len(answers) != len(questions):
         return jsonify({"error": "Cantidad de respuestas no coincide con el examen"}), 400
 
@@ -896,6 +1053,7 @@ def submit_exam():
     for i, q in enumerate(questions):
         qtype = q.get("type")
         a = answers[i]
+
         if qtype == "check":
             arr = safe_list_of_str(a, item_max_len=200, max_items=50)
             if not arr and isinstance(a, str) and a.strip():
@@ -910,28 +1068,46 @@ def submit_exam():
 
     for i, q in enumerate(questions):
         qtype = q.get("type")
+        title = safe_str(q.get("title"), 300)
 
         if q.get("scored", True) is not True:
-            details.append({"index": i, "is_correct": None, "user_value": cleaned_answers[i], "correct_value": None})
+            details.append({
+                "index": i,
+                "title": title,
+                "type": safe_str(q.get("type"), 20),
+                "is_correct": None,
+                "user_value": cleaned_answers[i],
+                "correct_value": None
+            })
             continue
 
         if qtype in ("multiple", "true_false"):
             correct_idx = q.get("correct", None)
             options = q.get("options", [])
+
             if not (isinstance(correct_idx, int) and isinstance(options, list)) or correct_idx < 0 or correct_idx >= len(options):
-                details.append({"index": i, "is_correct": None, "user_value": cleaned_answers[i], "correct_value": None})
+                details.append({
+                    "index": i,
+                    "title": title,
+                    "type": safe_str(q.get("type"), 20),
+                    "is_correct": None,
+                    "user_value": cleaned_answers[i],
+                    "correct_value": None
+                })
                 continue
 
             total += POINTS_PER_QUESTION
             correct_value = safe_str(options[correct_idx], 500)
-            is_ok = (isinstance(cleaned_answers[i], str) and cleaned_answers[i] == correct_value)
+            is_ok = isinstance(cleaned_answers[i], str) and cleaned_answers[i] == correct_value
 
             if is_ok:
                 score += POINTS_PER_QUESTION
 
             details.append({
                 "index": i,
-                "is_correct": True if is_ok else False,
+                "title": title,
+                "type": safe_str(q.get("type"), 20),
+                "is_correct": is_ok,
                 "user_value": cleaned_answers[i],
                 "correct_value": correct_value
             })
@@ -939,83 +1115,140 @@ def submit_exam():
         elif qtype == "check":
             correct_list = q.get("correct", None)
             options = q.get("options", [])
+
             if not (isinstance(correct_list, list) and isinstance(options, list)):
-                details.append({"index": i, "is_correct": None, "user_value": cleaned_answers[i], "correct_value": None})
+                details.append({
+                    "index": i,
+                    "title": title,
+                    "type": safe_str(q.get("type"), 20),
+                    "is_correct": None,
+                    "user_value": cleaned_answers[i],
+                    "correct_value": None
+                })
                 continue
 
-            correct_values = set()
+            correct_values = []
             ok = True
             for idx in correct_list:
                 if not isinstance(idx, int) or idx < 0 or idx >= len(options):
                     ok = False
                     break
-                correct_values.add(safe_str(options[idx], 500))
+                correct_values.append(safe_str(options[idx], 500))
+
             if not ok:
-                details.append({"index": i, "is_correct": None, "user_value": cleaned_answers[i], "correct_value": None})
+                details.append({
+                    "index": i,
+                    "title": title,
+                    "type": safe_str(q.get("type"), 20),
+                    "is_correct": None,
+                    "user_value": cleaned_answers[i],
+                    "correct_value": None
+                })
                 continue
 
             total += POINTS_PER_QUESTION
 
             user_vals = cleaned_answers[i]
             if not isinstance(user_vals, list):
-                details.append({"index": i, "is_correct": None, "user_value": cleaned_answers[i], "correct_value": list(correct_values)})
+                details.append({
+                    "index": i,
+                    "title": title,
+                    "type": safe_str(q.get("type"), 20),
+                    "is_correct": None,
+                    "user_value": cleaned_answers[i],
+                    "correct_value": correct_values
+                })
                 continue
 
-            user_set = set(safe_str(x, 500) for x in user_vals if safe_str(x, 500))
-            is_ok = (user_set == correct_values)
+            user_clean = [safe_str(x, 500) for x in user_vals if safe_str(x, 500)]
+            user_set = set(user_clean)
+            correct_set = set(correct_values)
+            is_ok = (user_set == correct_set)
 
             if is_ok:
                 score += POINTS_PER_QUESTION
 
             details.append({
                 "index": i,
-                "is_correct": True if is_ok else False,
-                "user_value": list(user_set),
-                "correct_value": list(correct_values)
+                "title": title,
+                "type": safe_str(q.get("type"), 20),
+                "is_correct": is_ok,
+                "user_value": user_clean,
+                "correct_value": correct_values
             })
 
         else:
-            details.append({"index": i, "is_correct": None, "user_value": cleaned_answers[i], "correct_value": None})
+            details.append({
+                "index": i,
+                "title": title,
+                "type": safe_str(q.get("type"), 20),
+                "is_correct": None,
+                "user_value": cleaned_answers[i],
+                "correct_value": None
+            })
 
     percent = round((score / total) * 100, 2) if total > 0 else ""
 
-    turno = safe_str(cleaned_answers[0], 200)
-    gerencia = safe_str(cleaned_answers[1], 200)
+    turno = safe_str(answer_by_title(questions, cleaned_answers, "Turno", ""), 200)
+    gerencia = safe_str(answer_by_title(questions, cleaned_answers, "Gerencia", ""), 200)
 
-    area_list = cleaned_answers[2] if isinstance(cleaned_answers[2], list) else []
-    area_list = [safe_str(x, 200) for x in area_list]
-    area_txt = ", ".join([x for x in area_list if x])
+    area_vals_any = answer_by_title(questions, cleaned_answers, "Área", [])
+    area_vals = area_vals_any if isinstance(area_vals_any, list) else []
+    area_vals = [safe_str(x, 200) for x in area_vals if safe_str(x, 200)]
 
-    nivel = safe_str(cleaned_answers[3], 200)
-    calif = safe_str(cleaned_answers[4], 20)
-    comentarios = safe_str(cleaned_answers[5], 500)
+    area_otro = ""
+    area_normal = []
 
-    custom_questions_slim = []
-    for q in custom_questions:
-        custom_questions_slim.append({
-            "title": safe_str(q.get("title"), 300),
-            "type": safe_str(q.get("type"), 20),
-            "options": q.get("options", []),
-            "scored": bool(q.get("scored", True))
-        })
-    custom_questions_json = json.dumps(custom_questions_slim, ensure_ascii=False)
+    for a in area_vals:
+        if normalize_text(a) == "OTRO" or normalize_text(a).startswith("OTRO:"):
+            area_otro = a
+        else:
+            area_normal.append(a)
+
+    area_txt = ", ".join(area_normal)
+
+    nivel_antes = safe_str(
+        answer_by_title(questions, cleaned_answers, "¿Cómo calificarías tu nivel de conocimiento sobre el tema antes de iniciar la formación?", ""),
+        20
+    )
+    nivel = safe_str(
+        answer_by_title(questions, cleaned_answers, "¿Nivel de conocimiento del tema de la formación?", ""),
+        200
+    )
+    calif = safe_str(
+        answer_by_title(questions, cleaned_answers, "De una escala de 1 a 5 cómo calificas el entrenamiento proporcionado por el Instructor.", ""),
+        20
+    )
+    comentarios = safe_str(
+        answer_by_title(questions, cleaned_answers, "Tienes alguna sugerencia, aporte o comentarios sobre el entrenamiento recibido?", ""),
+        500
+    )
+
+    answers_json = json.dumps(cleaned_answers, ensure_ascii=False)
 
     correct_list = []
     failed_list = []
 
     for d in details:
-        idx = d.get("index")
-        if not isinstance(idx, int):
+        if d.get("is_correct") is None:
             continue
-        if idx < fixed_count:
-            continue
-        if d.get("is_correct") is True:
-            correct_list.append({"user_value": d.get("user_value"), "correct_value": d.get("correct_value")})
-        if d.get("is_correct") is False:
-            failed_list.append({"user_value": d.get("user_value"), "correct_value": d.get("correct_value")})
 
-    correct_questions_json = json.dumps(correct_list, ensure_ascii=False)
-    most_failed_questions_json = json.dumps(failed_list, ensure_ascii=False)
+        item = {
+            "index": d.get("index"),
+            "title": d.get("title"),
+            "type": d.get("type"),
+            "user_value": d.get("user_value"),
+            "correct_value": d.get("correct_value"),
+            "is_correct": d.get("is_correct"),
+        }
+
+        if d.get("is_correct") is True:
+            correct_list.append(item)
+        elif d.get("is_correct") is False:
+            failed_list.append(item)
+
+    correc_json = json.dumps(correct_list, ensure_ascii=False)
+    failed_json = json.dumps(failed_list, ensure_ascii=False)
 
     submitted_at = datetime.now(UTC).isoformat()
 
@@ -1025,23 +1258,25 @@ def submit_exam():
         valueInputOption="RAW",
         insertDataOption="INSERT_ROWS",
         body={"values": [[
-            exam_id,                      # A
-            nombre,                      # B
-            registro,                    # C
-            cedula,                      # D
-            turno,                       # E
-            gerencia,                    # F
-            area_txt,                    # G
-            correct_questions_json,      # H
-            nivel,                       # I
-            calif,                       # J
-            comentarios,                 # K
-            custom_questions_json,       # L
-            submitted_at,                # M
-            score,                       # N
-            total,                       # O
-            percent,                     # P
-            most_failed_questions_json   # Q
+            exam_id,       # A
+            nombre,        # B
+            registro,      # C
+            cedula,        # D
+            turno,         # E
+            gerencia,      # F
+            area_txt,      # G
+            area_otro,     # H
+            nivel_antes,   # I
+            nivel,         # J
+            calif,         # K
+            comentarios,   # L
+            answers_json,  # M
+            submitted_at,  # N
+            score,         # O
+            total,         # P
+            percent,       # Q
+            failed_json,   # R
+            correc_json    # S
         ]]}
     ).execute()
 
@@ -1050,11 +1285,18 @@ def submit_exam():
         "score": score,
         "total": total,
         "percent": percent,
-        "details": details
+        "details": details,
+        "failed_json": failed_list,
+        "correc_json": correct_list
     })
 
+
 # =========================================================
-# RUN
+# MAIN
 # =========================================================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "5000")),
+        debug=os.getenv("FLASK_DEBUG", "1") == "1"
+    )
