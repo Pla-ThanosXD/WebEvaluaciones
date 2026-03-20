@@ -1,4 +1,4 @@
-<!doctype html>
+<!-- <!doctype html>
 <html lang="es">
 <head>
   <meta charset="utf-8">
@@ -167,6 +167,7 @@
   <div class="wrap">
     <div class="card">
       <img src="/static/Banner Exámenes-07.jpg"  class="veneno" alt="" width="540px" height="190px" style="display:block;margin:0 auto 18px auto; border-radius:10px;">
+      <h5 style="text-align: center; color: var(--muted);">Módulo de creación de formaciones y registros de asistencia</h5>
       <p class="sub">Selecciona una opción para continuar.</p>
 
       <div class="grid">
@@ -191,7 +192,7 @@
     </div>
   </div>
 
-  <!-- ✅ MODAL ADMIN -->
+
   <div id="admin_modal" class="modal" aria-hidden="true">
     <div class="box">
       <h3 style="margin:0;color:#9e1b1c;">Acceso administrativo</h3>
@@ -255,7 +256,7 @@
         const data = await res.json().catch(()=>({}));
         if (!res.ok) { err.textContent = data.error || "No se pudo ingresar."; return; }
 
-        // ✅ Entra a /creator en modo admin (por sesión)
+        // 
         window.location.href = data.redirect || "/creator";
       } finally {
         btn.disabled = false;
@@ -265,5 +266,103 @@
     btn?.addEventListener("click", doLogin);
     pwd?.addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
   </script>
+</body>
+</html> -->
+
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/static/icono.png" type="image/png">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inicio</title>
+
+  <style>
+    :root { --red:#9e1b1c; --text:#111827; --muted:#6b7280; --border:#dde3ea; }
+
+    *{box-sizing:border-box;}
+    body{
+      font-family:"Inter","Segoe UI","Roboto",sans-serif;
+      margin:0;
+      padding:60px 18px;
+      background-image:url(/static/fondos.webp);
+      background-size:cover;
+      background-position:center;
+    }
+    .wrap{max-width:720px;margin:auto;}
+    .card{
+      background:#fff;
+      border-radius:26px;
+      padding:26px;
+      border:2px solid #fff;
+      box-shadow:0 18px 40px rgba(0,0,0,0.15);
+    }
+
+    h1{
+      margin:0 0 6px 0;
+      color:var(--red);
+      font-size:26px;
+      font-weight:900;
+      text-align:center;
+    }
+    .sub{
+      text-align:center;
+      color:var(--muted);
+      margin:0 0 18px 0;
+      line-height:1.35;
+      font-weight:700;
+    }
+
+    .grid{
+      display:grid;
+      grid-template-columns:1fr;
+      gap:14px;
+      margin-top:14px;
+    }
+
+    .btn{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      width:100%;
+      padding:16px 16px;
+      border:none;
+      border-radius:16px;
+      cursor:pointer;
+      text-decoration:none;
+      font-weight:900;
+      color:#fff;
+      background:linear-gradient(135deg,var(--red),var(--red));
+      font-size:16px;
+    }
+    .btn.secondary{
+      background:#111827;
+    }
+
+    .veneno{
+      border-radius: 20px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="card">
+      <img src="/static/Banner Exámenes-07.jpg" class="veneno" alt="" style="display:block;margin:0 auto 18px auto;max-width:100%;height:auto;border-radius:10px;">
+
+      <p class="sub"><span style="color: #111827;">Módulo de creación de formaciones y registros de asistencia </span> <br>Selecciona una opción para continuar.</p>
+
+      <div class="grid">
+        <a class="btn" href="/creator">
+          <span>Crear Formación</span>
+        </a>
+
+        <a class="btn secondary" href="https://script.google.com/macros/s/AKfycbx3YJSswL6vXoboy5d4en2bQGeX2jlK_HXGAgIfAt2h1kJZ4FHCjO-KNWSetf-2UmPU/exec">
+          <span>Subir soporte</span>
+        </a>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
