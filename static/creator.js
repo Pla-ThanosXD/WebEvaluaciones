@@ -11,16 +11,36 @@
   }
 
   function escAttr(s) {
-    return String(s ?? "").replace(/"/g, "&quot;");
+    return String(s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
   }
 
   function show(el) { el?.classList.remove("hidden"); }
   function hide(el) { el?.classList.add("hidden"); }
   function setHTML(el, html) { if (el) el.innerHTML = html || ""; }
 
+  function toast(msg, ms = 1800) {
+    const el = document.getElementById("toast");
+    if (!el) return;
+    el.textContent = msg;
+    el.style.display = "block";
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => { el.style.display = "none"; }, ms);
+  }
+
+  function isValidEmail(email) {
+    const s = (email || "").trim();
+    return !!s && s.includes("@") && s.includes(".");
+  }
+
   let SYSTEM_AREAS = [];
   let SYSTEM_TOPICS = {};
+  let UI_TEXTS = {};
   let IS_ADMIN = false;
+
   let editingSystemOriginal = "";
   let SEARCH_INDEX = [];
 
@@ -110,14 +130,37 @@
   const courseDescription = document.getElementById("course_description");
   const course_date = document.getElementById("course_date");
   const course_duration = document.getElementById("course_duration");
-  const num_invites = document.getElementById("num_invites");
   const facilitator_email = document.getElementById("facilitator_email");
+
+  const reuse_course_duration = document.getElementById("reuse_course_duration");
+  const reuse_facilitator_email = document.getElementById("reuse_facilitator_email");
 
   const systemTopicBlock = document.getElementById("system_topic_block");
   const systemTopicSelect = document.getElementById("system_topic");
 
   const globalSearch = document.getElementById("system_global_search");
   const suggestBox = document.getElementById("system_global_suggest");
+
+  const reuseYes = document.getElementById("reuse_yes");
+  const reuseNo = document.getElementById("reuse_no");
+  const reuseSelectedBlock = document.getElementById("reuse_selected_block");
+  const normalFlowBlock = document.getElementById("normal_flow_block");
+  const reuseSystemPreview = document.getElementById("reuse_system_preview");
+
+  const qc = document.getElementById("questions_container");
+  const resultBox = document.getElementById("result");
+  const resultDirect = document.getElementById("result_direct");
+  const addBtn = document.getElementById("add_question");
+  const genBtn = document.getElementById("generate_exam");
+  const btnOpenForms = document.getElementById("btn_open_forms");
+
+  const examSelect = document.getElementById("exam_select");
+  const reuseBtn = document.getElementById("btn_reuse");
+  const resultReuse = document.getElementById("result_reuse");
+
+  const defaultQuestionsAdmin = document.getElementById("default_questions_admin");
+  const saveDefaultQuestionsBtn = document.getElementById("save_default_questions");
+  const defaultQuestionsResult = document.getElementById("default_questions_result");
 
   function setCourseLocked(locked) {
     if (!course) return;
@@ -139,10 +182,12 @@
 
       const areas = Array.isArray(data.system_areas) ? data.system_areas : [];
       const topics = (data.system_topics && typeof data.system_topics === "object") ? data.system_topics : {};
+      UI_TEXTS = (data.ui_texts && typeof data.ui_texts === "object") ? data.ui_texts : {};
 
       SYSTEM_TOPICS = Object.keys(topics).length ? topics : FALLBACK_SYSTEM_TOPICS;
       SYSTEM_AREAS = areas.length ? areas : Object.keys(SYSTEM_TOPICS || {});
     } catch {
+      UI_TEXTS = {};
       SYSTEM_TOPICS = FALLBACK_SYSTEM_TOPICS;
       SYSTEM_AREAS = Object.keys(SYSTEM_TOPICS || {});
     }
@@ -158,6 +203,13 @@
     }
   }
 
+  async function apiJSON(url, options = {}) {
+    const res = await fetch(url, options);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Error de servidor");
+    return data;
+  }
+
   function pencilSvg() {
     return `
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -166,6 +218,96 @@
               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     `;
+  }
+
+  function applyUITexts() {
+    const map = {
+      label_facilitator: document.getElementById("label_facilitator"),
+      label_facilitator_cedula: document.getElementById("label_facilitator_cedula"),
+      label_system_area: document.getElementById("label_system_area"),
+      label_course: document.getElementById("label_course"),
+      label_course_description: document.getElementById("label_course_description"),
+      label_course_duration: document.getElementById("label_course_duration"),
+      label_facilitator_email: document.getElementById("label_facilitator_email")
+    };
+
+    Object.keys(map).forEach((key) => {
+      const el = map[key];
+      if (el && UI_TEXTS[key]) el.textContent = UI_TEXTS[key];
+    });
+  }
+
+  function ensureAdminEditIcons() {
+    if (!IS_ADMIN) return;
+    document.querySelectorAll(".admin-edit").forEach((el) => {
+      if (!el.innerHTML.trim()) el.innerHTML = pencilSvg();
+      el.classList.remove("hidden");
+    });
+  }
+
+  const adminEditModal = document.getElementById("admin_edit_modal");
+  const adminEditHelp = document.getElementById("admin_edit_help");
+  const adminEditValue = document.getElementById("admin_edit_value");
+  const adminEditSave = document.getElementById("admin_edit_save");
+  const adminEditClose = document.getElementById("admin_edit_close");
+  const adminEditErr = document.getElementById("admin_edit_err");
+
+  let currentUITextKey = "";
+
+  function openUITextEditor(key) {
+    if (!IS_ADMIN || !adminEditModal || !adminEditValue) return;
+    currentUITextKey = key;
+    adminEditErr.textContent = "";
+    adminEditValue.value = UI_TEXTS[key] || document.getElementById(key)?.textContent?.trim() || "";
+    if (adminEditHelp) adminEditHelp.textContent = `Editar texto: ${key}`;
+    adminEditModal.classList.add("show");
+    adminEditValue.focus();
+  }
+
+  function closeUITextEditor() {
+    adminEditModal?.classList.remove("show");
+    currentUITextKey = "";
+  }
+
+  async function saveUIText() {
+    if (!currentUITextKey) return;
+    const value = (adminEditValue?.value || "").trim();
+    if (!value) {
+      if (adminEditErr) adminEditErr.textContent = "El valor no puede estar vacío.";
+      return;
+    }
+
+    adminEditSave.disabled = true;
+    try {
+      await apiJSON("/api/admin/ui_texts/update", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: currentUITextKey, value })
+      });
+      UI_TEXTS[currentUITextKey] = value;
+      applyUITexts();
+      closeUITextEditor();
+      toast("Texto actualizado");
+    } catch (e) {
+      if (adminEditErr) adminEditErr.textContent = String(e.message || e);
+    } finally {
+      adminEditSave.disabled = false;
+    }
+  }
+
+  function bindUITextEditors() {
+    document.querySelectorAll(".admin-edit").forEach((el) => {
+      const key = el.getAttribute("data-target");
+      if (!key) return;
+      el.addEventListener("click", () => openUITextEditor(key));
+    });
+
+    adminEditSave?.addEventListener("click", saveUIText);
+    adminEditClose?.addEventListener("click", closeUITextEditor);
+    adminEditModal?.addEventListener("click", (e) => {
+      if (e.target === adminEditModal) closeUITextEditor();
+    });
   }
 
   function renderSystemAreas() {
@@ -269,7 +411,9 @@
     if (globalSearch) globalSearch.value = "";
     closeSuggest();
 
-    if (getSubMode() === "reuse") resetExamSelect("Selecciona Sistema y Título para filtrar…");
+    if (reuseSystemPreview) reuseSystemPreview.value = "";
+    resetExamSelect("Selecciona Sistema…");
+    setHTML(resultReuse, "");
   }
 
   function bindSystemAreaEvents() {
@@ -281,14 +425,25 @@
           if (globalSearch) globalSearch.value = "";
           closeSuggest();
 
-          if (getSubMode() === "reuse") resetExamSelect("Selecciona un título para ver exámenes…");
+          if (reuseSystemPreview) {
+            reuseSystemPreview.value = chk.value || "";
+          }
+
+          if (getReuseMode() === "yes") {
+            await filterReuseExamsBySystemOnly();
+          }
         } else {
           fillTopics("");
           clearCourse();
           if (globalSearch) globalSearch.value = "";
           closeSuggest();
 
-          if (getSubMode() === "reuse") resetExamSelect("Selecciona un sistema…");
+          if (reuseSystemPreview) {
+            reuseSystemPreview.value = "";
+          }
+
+          resetExamSelect("Selecciona Sistema…");
+          setHTML(resultReuse, "");
         }
       });
     });
@@ -301,8 +456,6 @@
     if (course) course.value = topic;
     setCourseLocked(true);
     course?.blur();
-
-    if (getSubMode() === "reuse") await filterReuseExamsBySystemAndTitle();
   });
 
   function buildSearchIndex() {
@@ -543,15 +696,12 @@
 
     sysSaveBtn.disabled = true;
     try {
-      const res = await fetch("/api/admin/system_config/save", {
+      await apiJSON("/api/admin/system_config/save", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ system_areas: nextAreas, system_topics: nextTopics })
       });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) { sysErr.textContent = data.error || "No se pudo guardar."; return; }
 
       SYSTEM_AREAS = nextAreas;
       SYSTEM_TOPICS = nextTopics;
@@ -561,6 +711,9 @@
       buildSearchIndex();
 
       closeSystemEditor();
+      toast("Sistema guardado");
+    } catch (e) {
+      sysErr.textContent = String(e.message || e);
     } finally {
       sysSaveBtn.disabled = false;
     }
@@ -583,31 +736,26 @@
     if (delBtn) delBtn.disabled = true;
 
     try {
-      const res = await fetch("/api/admin/system_config/save", {
+      await apiJSON("/api/admin/system_config/save", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ system_areas: nextAreas, system_topics: nextTopics })
       });
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        if (sysErr) sysErr.textContent = data.error || "No se pudo eliminar.";
-        return;
-      }
-
       SYSTEM_AREAS = nextAreas;
       SYSTEM_TOPICS = nextTopics;
 
-      if (getSelectedSystem() === editingSystemOriginal) {
-        clearHabilitadorSelection();
-      }
+      if (getSelectedSystem() === editingSystemOriginal) clearHabilitadorSelection();
 
       renderSystemAreas();
       bindSystemAreaEvents();
       buildSearchIndex();
 
       closeSystemEditor();
+      toast("Sistema eliminado");
+    } catch (e2) {
+      if (sysErr) sysErr.textContent = String(e2.message || e2);
     } finally {
       if (delBtn) delBtn.disabled = false;
     }
@@ -620,341 +768,347 @@
     closeSystemEditor();
   });
 
-  const modeYes = document.getElementById("mode_yes");
-  const modeNo = document.getElementById("mode_no");
-  const directLinkBlock = document.getElementById("direct_link_block");
-  const yesSubmodeBlock = document.getElementById("yes_submode_block");
-  const btnOpenForms = document.getElementById("btn_open_forms");
-
-  const subCreate0 = document.getElementById("sub_create0");
-  const subReuse = document.getElementById("sub_reuse");
-  const create0Block = document.getElementById("create0_block");
-  const reuseBlock = document.getElementById("reuse_block");
-
-  function clearSubModeRadios() {
-    if (subCreate0) subCreate0.checked = false;
-    if (subReuse) subReuse.checked = false;
-  }
-  function getMainMode() {
-    if (modeYes?.checked) return "yes";
-    if (modeNo?.checked) return "no";
-    return "";
-  }
-  function getSubMode() {
-    if (subCreate0?.checked) return "create0";
-    if (subReuse?.checked) return "reuse";
-    return "";
-  }
-
-  function toggleMainMode() {
-    const m = getMainMode();
-
-    hide(directLinkBlock);
-    hide(yesSubmodeBlock);
-    hide(create0Block);
-    hide(reuseBlock);
-    hide(editArea);
-
-    if (m === "no") {
-      show(directLinkBlock);
-      clearSubModeRadios();
-      return;
-    }
-    if (m === "yes") {
-      show(yesSubmodeBlock);
-      if (!getSubMode() && subCreate0) subCreate0.checked = true;
-      toggleSubMode();
-    }
-  }
-
-  async function toggleSubMode() {
-    const sm = getSubMode();
-
-    hide(create0Block);
-    hide(reuseBlock);
-    hide(editArea);
-
-    if (sm === "create0") {
-      show(create0Block);
-      if (qc && qc.children.length === 0) addEmptyQuestion(qc);
-      return;
-    }
-
-    if (sm === "reuse") {
-      show(reuseBlock);
-      resetExamSelect("Selecciona Sistema y Título para filtrar…");
-      setHTML(resultReuse, "");
-
-      if (getSelectedSystem() && getSelectedTopic()) {
-        await filterReuseExamsBySystemAndTitle();
-      }
-    }
-  }
-
-  modeYes?.addEventListener("change", toggleMainMode);
-  modeNo?.addEventListener("change", toggleMainMode);
-  subCreate0?.addEventListener("change", toggleSubMode);
-  subReuse?.addEventListener("change", toggleSubMode);
-
-  function getExamTopDataOrAlert() {
-    const fac = normalizeText(facilitator?.value);
-    const facCed = (facilitator_cedula?.value || "").trim();
-
-    const system_area = getSelectedSystem();
-    const system_title = getSelectedTopic();
-
-    const desc = (courseDescription?.value || "").trim();
-    const date = (course_date?.value || "").trim();
-    const duration = (course_duration?.value || "").trim();
-    const invites = (num_invites?.value || "").trim();
-    const email = (facilitator_email?.value || "").trim();
-
-    if (!fac || !facCed) { alert("Debes llenar: Facilitador y Cédula del facilitador."); return null; }
-    if (!system_area || !system_title) { alert("Debes seleccionar: Habilitador (Sistema) y Título de la formación."); return null; }
-    if (!date || !duration || !invites || !email) { alert("Debes llenar: Fecha, Duración, Invitados y Correo del facilitador."); return null; }
-    if (!email.includes("@") || !email.includes(".")) { alert("Correo inválido."); return null; }
-
-    const c = system_title;
-
-    return { fac, facCed, c, desc, date, duration, invites, email, system_area, system_title };
-  }
-
-  const qc = document.getElementById("questions_container");
-  const resultBox = document.getElementById("result");
-  const resultDirect = document.getElementById("result_direct");
-  const addBtn = document.getElementById("add_question");
-  const genBtn = document.getElementById("generate_exam");
-
-  const examSelect = document.getElementById("exam_select");
-  const reuseBtn = document.getElementById("btn_reuse");
-  const editBtn = document.getElementById("btn_edit");
-
-  const editArea = document.getElementById("edit_area");
-  const qcEdit = document.getElementById("questions_container_edit");
-  const addBtnEdit = document.getElementById("add_question_edit");
-  const saveBtn = document.getElementById("save_edit");
-
-  const facilitatorEdit = document.getElementById("facilitator_edit");
-  const facilitatorCedulaEdit = document.getElementById("facilitator_cedula_edit");
-  const courseEdit = document.getElementById("course_edit");
-
-  const resultReuse = document.getElementById("result_reuse");
-  const resultEdit = document.getElementById("result_edit");
-
-  let editingExamId = null;
-
-  function resetExamSelect(msg) {
-    if (!examSelect) return;
-    examSelect.innerHTML = `<option value="" selected disabled>${msg}</option>`;
-  }
-
-  async function filterReuseExamsBySystemAndTitle() {
-    const system = getSelectedSystem();
-    const title = getSelectedTopic();
-    if (!system) { resetExamSelect("Selecciona un sistema…"); return; }
-    if (!title) { resetExamSelect("Selecciona un título…"); return; }
-
-    resetExamSelect("Buscando exámenes…");
+  async function loadDefaultQuestionsAdmin() {
+    if (!IS_ADMIN || !defaultQuestionsAdmin) return;
 
     try {
-      const url = `/api/exams/filter?system_area=${encodeURIComponent(system)}&system_title=${encodeURIComponent(title)}`;
-      const res = await fetch(url);
-      const data = await res.json().catch(() => ({}));
-      const exams = data.exams || [];
+      const data = await apiJSON("/api/admin/default_questions/options", {
+        credentials: "same-origin"
+      });
+      const questions = Array.isArray(data.questions) ? data.questions : [];
 
-      examSelect.innerHTML = `<option value="" selected disabled>Selecciona…</option>`;
+      defaultQuestionsAdmin.innerHTML = questions.map((q) => `
+        <div class="question" style="margin-top:12px;">
+          <label style="margin-top:0;">${q.title}</label>
+          <div class="small">Tipo: ${q.type === "check" ? "Checkbox múltiple" : "Selección única"}</div>
+          <div class="fixed-options">
+            ${(Array.isArray(q.options) ? q.options : []).map(opt => `
+              <div style="display:flex;gap:10px;align-items:center;margin-top:8px;">
+                <input class="fixed-opt" value="${escAttr(opt)}" style="flex:1;">
+                <button type="button" class="secondary del-fixed-opt" style="width:auto;">🗑️</button>
+              </div>
+            `).join("")}
+          </div>
+          <button type="button" class="secondary add-fixed-opt" style="margin-top:10px;">Agregar opción</button>
+        </div>
+      `).join("");
 
-      if (!exams.length) {
-        resetExamSelect("No hay formación para reutilizar");
+      defaultQuestionsAdmin.querySelectorAll(".add-fixed-opt").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const wrap = btn.parentElement.querySelector(".fixed-options");
+          const row = document.createElement("div");
+          row.style.display = "flex";
+          row.style.gap = "10px";
+          row.style.alignItems = "center";
+          row.style.marginTop = "8px";
+          row.innerHTML = `
+            <input class="fixed-opt" placeholder="Nueva opción" style="flex:1;">
+            <button type="button" class="secondary del-fixed-opt" style="width:auto;">🗑️</button>
+          `;
+          wrap.appendChild(row);
+          row.querySelector(".del-fixed-opt")?.addEventListener("click", () => row.remove());
+          row.querySelector(".fixed-opt")?.focus();
+        });
+      });
+
+      defaultQuestionsAdmin.querySelectorAll(".del-fixed-opt").forEach((btn) => {
+        btn.addEventListener("click", () => btn.parentElement.remove());
+      });
+    } catch (e) {
+      if (defaultQuestionsResult) defaultQuestionsResult.innerHTML = `⚠️ ${escAttr(String(e.message || e))}`;
+    }
+  }
+
+  saveDefaultQuestionsBtn?.addEventListener("click", async () => {
+    if (!IS_ADMIN || !defaultQuestionsAdmin) return;
+
+    const blocks = [...defaultQuestionsAdmin.querySelectorAll(".question")];
+    const questions = blocks.map((b) => {
+      const title = b.querySelector("label")?.textContent?.trim() || "";
+      const options = [...b.querySelectorAll(".fixed-opt")]
+        .map(x => (x.value || "").trim())
+        .filter(Boolean);
+      return { title, options };
+    });
+
+    saveDefaultQuestionsBtn.disabled = true;
+    try {
+      await apiJSON("/api/admin/default_questions/options", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questions })
+      });
+      if (defaultQuestionsResult) defaultQuestionsResult.innerHTML = "✅ Opciones guardadas correctamente.";
+      toast("Opciones fijas guardadas");
+    } catch (e) {
+      if (defaultQuestionsResult) defaultQuestionsResult.innerHTML = `⚠️ ${escAttr(String(e.message || e))}`;
+    } finally {
+      saveDefaultQuestionsBtn.disabled = false;
+    }
+  });
+
+  function getBaseDataOrAlert() {
+    const fac = normalizeText(facilitator?.value);
+    const facCed = (facilitator_cedula?.value || "").trim();
+    const system_area = getSelectedSystem();
+    const system_title = getSelectedTopic();
+    const date = (course_date?.value || "").trim();
+
+    if (!fac || !facCed) {
+      alert("Debes llenar: Nombre y Cédula del facilitador.");
+      return null;
+    }
+
+    if (!date) {
+      alert("Debes seleccionar la fecha.");
+      return null;
+    }
+
+    if (!system_area) {
+      alert("Debes seleccionar el Habilitador.");
+      return null;
+    }
+
+    return {
+      fac,
+      facCed,
+      date,
+      system_area,
+      system_title
+    };
+  }
+
+  function getNormalFlowDataOrAlert() {
+    const base = getBaseDataOrAlert();
+    if (!base) return null;
+
+    const c = (course?.value || "").trim();
+    const desc = (courseDescription?.value || "").trim();
+    const duration = (course_duration?.value || "").trim();
+    const email = (facilitator_email?.value || "").trim();
+
+    if (!c) {
+      alert("Debes tener un nombre del curso.");
+      return null;
+    }
+
+    if (!desc) {
+      alert("Debes llenar la Descripción del curso.");
+      return null;
+    }
+
+    if (!duration || !email) {
+      alert("Debes llenar: Duración y Correo del facilitador.");
+      return null;
+    }
+
+    if (!isValidEmail(email)) {
+      alert("Correo inválido.");
+      return null;
+    }
+
+    return {
+      ...base,
+      c,
+      desc,
+      duration,
+      email
+    };
+  }
+
+  function getReuseDataOrAlert() {
+    const base = getBaseDataOrAlert();
+    if (!base) return null;
+
+    const duration = (reuse_course_duration?.value || "").trim();
+    const email = (reuse_facilitator_email?.value || "").trim();
+    const selectedOption = examSelect?.selectedOptions?.[0];
+
+    if (!examSelect?.value || !selectedOption) {
+      alert("Selecciona una formación.");
+      return null;
+    }
+
+    if (!duration || !email) {
+      alert("Debes llenar: Duración y Correo del facilitador para reutilizar.");
+      return null;
+    }
+
+    if (!isValidEmail(email)) {
+      alert("Correo inválido.");
+      return null;
+    }
+
+    const selectedCourseName = (selectedOption.textContent || "").split(" — ")[0].trim();
+
+    return {
+      ...base,
+      c: selectedCourseName || (course?.value || "").trim() || base.system_area,
+      duration,
+      email
+    };
+  }
+
+  function makeQuestionBlockFromData(q, container) {
+    const div = document.createElement("div");
+    div.className = "question";
+    const qType = q.type || "text";
+
+    div.innerHTML = `
+      <label>Tipo</label>
+      <select class="qtype" style="width:100%;padding:12px;border-radius:10px;border:1px solid #dde3ea;margin-top:8px;">
+        <option value="text">Texto (sin puntuación)</option>
+        <option value="multiple">Opción múltiple (1 correcta)</option>
+        <option value="true_false">Verdadero / Falso</option>
+        <option value="check">Checkbox (varias correctas)</option>
+      </select>
+
+      <label style="margin-top:12px;">Enunciado</label>
+      <input class="qtext" placeholder="Pregunta" value="${escAttr(q.title || "")}">
+
+      <div class="score_block" style="margin-top:10px;"></div>
+      <div class="opts" style="margin-top:12px;"></div>
+
+      <button type="button" class="remove_q secondary" style="margin-top:10px;">Eliminar pregunta</button>
+    `;
+
+    container.appendChild(div);
+    div.querySelector(".remove_q").onclick = () => div.remove();
+
+    const sel = div.querySelector(".qtype");
+    const opts = div.querySelector(".opts");
+    const scoreBlock = div.querySelector(".score_block");
+    sel.value = qType;
+
+    const render = () => {
+      opts.innerHTML = "";
+      scoreBlock.innerHTML = "";
+
+      if (sel.value === "text") {
+        scoreBlock.innerHTML = `<div class="small">Esta pregunta no es calificable.</div>`;
         return;
       }
 
-      exams.forEach((e) => {
-        const opt = document.createElement("option");
-        opt.value = e.id;
-        const fecha = (e.course_date || "").trim();
-        opt.textContent = `${e.course} — ${e.facilitator}${fecha ? " — " + fecha : ""} (${e.id})`;
-        examSelect.appendChild(opt);
-      });
+      if (sel.value === "true_false") {
+        scoreBlock.innerHTML = `<div class="small">✅ Esta pregunta es calificable y vale 1 punto.</div>`;
+        const correct = Number(q.correct ?? 0);
 
-      setHTML(resultReuse, `✅ Encontrados: <b>${exams.length}</b> examen(es) para <b>${system}</b> → <b>${title}</b>.`);
-    } catch {
-      resetExamSelect("Error buscando exámenes");
-      setHTML(resultReuse, "⚠️ No se pudo filtrar. Revisa conexión / endpoint /api/exams/filter");
-    }
-  }
-
- function makeQuestionBlockFromData(q, container) {
-  const div = document.createElement("div");
-  div.className = "question";
-
-  const qType = q.type || "text";
-
-  div.innerHTML = `
-    <label style="margin-top:0;">Enunciado</label>
-    <input class="qtext" placeholder="Pregunta" value="${escAttr(q.title || "")}">
-
-    <label>Tipo</label>
-    <select class="qtype" style="width:100%;padding:12px;border-radius:10px;border:1px solid #dde3ea;margin-top:8px;">
-      <option value="text">Texto (sin puntuación)</option>
-      <option value="multiple">Opción múltiple (1 correcta)</option>
-      <option value="true_false">Verdadero / Falso</option>
-      <option value="check">Checkbox (varias correctas)</option>
-    </select>
-
-    <div class="score_block" style="margin-top:10px;"></div>
-    <div class="opts" style="margin-top:12px;"></div>
-
-    <button type="button" class="remove_q secondary" style="margin-top:10px;">Eliminar pregunta</button>
-  `;
-
-  container.appendChild(div);
-  div.querySelector(".remove_q").onclick = () => div.remove();
-
-  const sel = div.querySelector(".qtype");
-  const opts = div.querySelector(".opts");
-  const scoreBlock = div.querySelector(".score_block");
-  sel.value = qType;
-
-  const render = () => {
-    opts.innerHTML = "";
-    scoreBlock.innerHTML = "";
-
-    if (sel.value === "text") {
-      scoreBlock.innerHTML = `<div class="small">Esta pregunta no es calificable.</div>`;
-      return;
-    }
-
-    if (sel.value === "true_false") {
-      scoreBlock.innerHTML = `<div class="small"></div>`;
-      const correct = Number(q.correct ?? 0);
-
-      opts.innerHTML = `
-        <label style="font-weight:700;color:#9e1b1c;">Respuesta correcta</label>
-        <select class="correct_tf" style="width:100%;padding:12px;border-radius:10px;border:1px solid #dde3ea;margin-top:8px;">
-          <option value="0">VERDADERO</option>
-          <option value="1">FALSO</option>
-        </select>
-      `;
-      opts.querySelector(".correct_tf").value = String(correct);
-      return;
-    }
-
-    if (sel.value === "multiple") {
-      scoreBlock.innerHTML = `<div class="small"></div>`;
-
-      const options = Array.isArray(q.options) ? q.options : [];
-      const count = Math.max(4, options.length || 0);
-
-      for (let i = 0; i < count; i++) {
-        const val = options[i] ? escAttr(options[i]) : "";
-        opts.innerHTML += `<input class="opt" placeholder="Opción ${i + 1}" style="margin-top:8px;" value="${val}">`;
-      }
-
-      opts.innerHTML += `<div class="correct_area" style="margin-top:10px;"></div>`;
-      const correctArea = opts.querySelector(".correct_area");
-
-      const renderCorrectSelect = () => {
-        const currentOptions = [...div.querySelectorAll(".opt")]
-          .map((x) => (x.value || "").trim())
-          .filter(Boolean);
-
-        const max = currentOptions.length || count;
-
-        correctArea.innerHTML = `
+        opts.innerHTML = `
           <label style="font-weight:700;color:#9e1b1c;">Respuesta correcta</label>
-          <select class="correct" style="width:100%;padding:12px;border-radius:10px;border:1px solid #dde3ea;margin-top:8px;">
-            ${Array.from({ length: max }).map((_, i) => `<option value="${i}">Opción ${i + 1}</option>`).join("")}
+          <select class="correct_tf" style="width:100%;padding:12px;border-radius:10px;border:1px solid #dde3ea;margin-top:8px;">
+            <option value="0">VERDADERO</option>
+            <option value="1">FALSO</option>
           </select>
         `;
-
-        const correct = Number(q.correct ?? 0);
-        correctArea.querySelector(".correct").value = String(Math.min(correct, max - 1));
-      };
-
-      div.querySelectorAll(".opt").forEach((inp) => {
-        inp.addEventListener("input", renderCorrectSelect);
-      });
-
-      renderCorrectSelect();
-      return;
-    }
-
-    if (sel.value === "check") {
-      scoreBlock.innerHTML = `<div class="small">✅ Esta pregunta es calificable y vale 1 punto.</div>`;
-
-      const options = Array.isArray(q.options) ? q.options : [];
-      const count = Math.max(4, options.length || 0);
-
-      for (let i = 0; i < count; i++) {
-        const val = options[i] ? escAttr(options[i]) : "";
-        opts.innerHTML += `<input class="opt" placeholder="Opción ${i + 1}" style="margin-top:8px;" value="${val}">`;
+        opts.querySelector(".correct_tf").value = String(correct);
+        return;
       }
 
-      opts.innerHTML += `
-        <div class="correct_area" style="margin-top:10px;"></div>
-        <button type="button" class="refresh_correct secondary" style="margin-top:10px;">Actualizar correctas</button>
-      `;
+      if (sel.value === "multiple") {
+        scoreBlock.innerHTML = `<div class="small">✅ Esta pregunta es calificable y vale 1 punto.</div>`;
 
-      const correctArea = opts.querySelector(".correct_area");
-      const refreshBtn = opts.querySelector(".refresh_correct");
+        const options = Array.isArray(q.options) ? q.options : [];
+        const count = Math.max(4, options.length || 0);
 
-      const renderCorrectChecks = () => {
-        const currentOptions = [...div.querySelectorAll(".opt")]
-          .map((x) => (x.value || "").trim())
-          .filter(Boolean);
-
-        if (!currentOptions.length) {
-          correctArea.innerHTML = "<i>Primero llena las opciones y pulsa “Actualizar correctas”.</i>";
-          return;
+        for (let i = 0; i < count; i++) {
+          const val = options[i] ? escAttr(options[i]) : "";
+          opts.innerHTML += `<input class="opt" placeholder="Opción ${i + 1}" style="margin-top:8px;" value="${val}">`;
         }
 
-        correctArea.innerHTML = `<div style="font-weight:700;color:#9e1b1c;margin-bottom:8px;">Respuestas correctas (varias)</div>`;
-        currentOptions.forEach((txt, idx) => {
-          const row = document.createElement("label");
-          row.style.display = "block";
-          row.style.marginBottom = "6px";
-          row.innerHTML = `<input type="checkbox" class="correct_chk" value="${idx}"> ${txt}`;
-          correctArea.appendChild(row);
-        });
+        opts.innerHTML += `<div class="correct_area" style="margin-top:10px;"></div>`;
+        const correctArea = opts.querySelector(".correct_area");
 
-        const correctIdxs = Array.isArray(q.correct) ? q.correct : [];
-        correctIdxs.forEach((ci) => {
-          const el = correctArea.querySelector(`.correct_chk[value="${ci}"]`);
-          if (el) el.checked = true;
-        });
-      };
+        const renderCorrectSelect = () => {
+          const currentOptions = [...div.querySelectorAll(".opt")]
+            .map((x) => (x.value || "").trim())
+            .filter(Boolean);
 
-      refreshBtn.onclick = renderCorrectChecks;
-      renderCorrectChecks();
-    }
-  };
+          const max = currentOptions.length || count;
 
-  sel.onchange = render;
-  render();
-}
+          correctArea.innerHTML = `
+            <label style="font-weight:700;color:#9e1b1c;">Respuesta correcta</label>
+            <select class="correct" style="width:100%;padding:12px;border-radius:10px;border:1px solid #dde3ea;margin-top:8px;">
+              ${Array.from({ length: max }).map((_, i) => `<option value="${i}">Opción ${i + 1}</option>`).join("")}
+            </select>
+          `;
+
+          const correct = Number(q.correct ?? 0);
+          correctArea.querySelector(".correct").value = String(Math.min(correct, Math.max(0, max - 1)));
+        };
+
+        div.querySelectorAll(".opt").forEach((inp) => inp.addEventListener("input", renderCorrectSelect));
+        renderCorrectSelect();
+        return;
+      }
+
+      if (sel.value === "check") {
+        scoreBlock.innerHTML = `<div class="small">✅ Esta pregunta es calificable y vale 1 punto.</div>`;
+
+        const options = Array.isArray(q.options) ? q.options : [];
+        const count = Math.max(4, options.length || 0);
+
+        for (let i = 0; i < count; i++) {
+          const val = options[i] ? escAttr(options[i]) : "";
+          opts.innerHTML += `<input class="opt" placeholder="Opción ${i + 1}" style="margin-top:8px;" value="${val}">`;
+        }
+
+        opts.innerHTML += `
+          <div class="correct_area" style="margin-top:10px;"></div>
+          <button type="button" class="refresh_correct secondary" style="margin-top:10px;">Actualizar correctas</button>
+        `;
+
+        const correctArea = opts.querySelector(".correct_area");
+        const refreshBtn = opts.querySelector(".refresh_correct");
+
+        const renderCorrectChecks = () => {
+          const currentOptions = [...div.querySelectorAll(".opt")]
+            .map((x) => (x.value || "").trim())
+            .filter(Boolean);
+
+          if (!currentOptions.length) {
+            correctArea.innerHTML = "<i>Primero llena las opciones y pulsa “Actualizar correctas”.</i>";
+            return;
+          }
+
+          correctArea.innerHTML = `<div style="font-weight:700;color:#9e1b1c;margin-bottom:8px;">Respuestas correctas (varias)</div>`;
+          currentOptions.forEach((txt, idx) => {
+            const row = document.createElement("label");
+            row.style.display = "block";
+            row.style.marginBottom = "6px";
+            row.innerHTML = `<input type="checkbox" class="correct_chk" value="${idx}"> ${txt}`;
+            correctArea.appendChild(row);
+          });
+
+          const correctIdxs = Array.isArray(q.correct) ? q.correct : [];
+          correctIdxs.forEach((ci) => {
+            const el = correctArea.querySelector(`.correct_chk[value="${ci}"]`);
+            if (el) el.checked = true;
+          });
+        };
+
+        refreshBtn.onclick = renderCorrectChecks;
+        renderCorrectChecks();
+      }
+    };
+
+    sel.onchange = render;
+    render();
+  }
 
   function addEmptyQuestion(container) {
     makeQuestionBlockFromData({ title: "", type: "text", scored: false }, container);
   }
 
-  addBtn?.addEventListener("click", () => {
-    if (getSubMode() !== "create0") return;
-    addEmptyQuestion(qc);
-  });
-
-  genBtn?.addEventListener("click", async () => {
-    const top = getExamTopDataOrAlert();
-    if (!top) return;
-
+  function collectQuestionBlocks(container) {
+    const blocks = container ? [...container.querySelectorAll(".question")] : [];
     const questions = [];
-    const blocks = qc ? [...qc.querySelectorAll(".question")] : [];
 
     for (let i = 0; i < blocks.length; i++) {
       const b = blocks[i];
       const title = (b.querySelector(".qtext")?.value || "").trim();
       const type = (b.querySelector(".qtype")?.value || "").trim();
-      if (!title) return alert(`Pregunta ${i + 1} vacía`);
+      if (!title) throw new Error(`Pregunta ${i + 1} vacía`);
 
       if (type === "text") {
         questions.push({ title, type: "text", scored: false });
@@ -967,30 +1121,105 @@
         continue;
       }
 
- const options = [...b.querySelectorAll(".opt")].map((x) => (x.value || "").trim()).filter(Boolean);
-if (options.length < 2) return alert(`Pregunta ${i + 1}: mínimo 2 opciones`);
+      const options = [...b.querySelectorAll(".opt")]
+        .map((x) => (x.value || "").trim())
+        .filter(Boolean);
 
-if (type === "multiple") {
-  const correct = Number(b.querySelector(".correct")?.value ?? 0);
-  questions.push({ title, type: "multiple", options, correct, scored: true });
-  continue;
-}
+      if (options.length < 2) throw new Error(`Pregunta ${i + 1}: mínimo 2 opciones`);
 
-if (type === "check") {
-  const correctIdxs = [...b.querySelectorAll(".correct_chk:checked")]
-    .map((x) => Number(x.value))
-    .filter((n) => Number.isInteger(n));
-  if (!correctIdxs.length) return alert(`Pregunta ${i + 1}: marca al menos una correcta (check)`);
-  questions.push({ title, type: "check", options, correct: correctIdxs, scored: true });
-}
+      if (type === "multiple") {
+        const correct = Number(b.querySelector(".correct")?.value ?? 0);
+        questions.push({ title, type: "multiple", options, correct, scored: true });
+        continue;
+      }
+
+      if (type === "check") {
+        const correctIdxs = [...b.querySelectorAll(".correct_chk:checked")]
+          .map((x) => Number(x.value))
+          .filter((n) => Number.isInteger(n));
+        if (!correctIdxs.length) throw new Error(`Pregunta ${i + 1}: marca al menos una correcta (check)`);
+        questions.push({ title, type: "check", options, correct: correctIdxs, scored: true });
+        continue;
+      }
+
+      throw new Error(`Pregunta ${i + 1}: tipo inválido`);
+    }
+
+    return questions;
+  }
+
+  function resetExamSelect(msg) {
+    if (!examSelect) return;
+    examSelect.innerHTML = `<option value="" selected disabled>${msg}</option>`;
+  }
+
+  async function filterReuseExamsBySystemOnly() {
+    const system = getSelectedSystem();
+
+    if (!system) {
+      resetExamSelect("Selecciona un habilitador…");
+      return;
+    }
+
+    resetExamSelect("Buscando formaciones…");
+
+    try {
+      const url = `/api/exams/filter?system_area=${encodeURIComponent(system)}`;
+      const data = await apiJSON(url);
+      const exams = Array.isArray(data.exams) ? data.exams : [];
+
+      const selectedValue = examSelect?.value || "";
+
+      examSelect.innerHTML = `<option value="" selected disabled>Selecciona…</option>`;
+
+      if (!exams.length) {
+        resetExamSelect("No hay formaciones previas");
+        setHTML(resultReuse, `⚠️ No hay formaciones creadas para el habilitador <b>${system}</b>.`);
+        return;
+      }
+
+      exams.forEach((e) => {
+        const opt = document.createElement("option");
+        opt.value = e.id;
+        const fecha = (e.course_date || "").trim();
+        const titulo = (e.system_title || "").trim();
+        opt.textContent = `${e.course} — ${titulo || "Sin título"} — ${e.facilitator}${fecha ? " — " + fecha : ""} (${e.id})`;
+        examSelect.appendChild(opt);
+      });
+
+      if (selectedValue) {
+        const optToRestore = [...examSelect.options].find(o => o.value === selectedValue);
+        if (optToRestore) examSelect.value = selectedValue;
+      }
+
+      setHTML(resultReuse, `✅ Encontradas: <b>${exams.length}</b> formación(es) para el habilitador <b>${system}</b>.`);
+    } catch (e) {
+      resetExamSelect("Error buscando formaciones");
+      setHTML(resultReuse, `⚠️ ${escAttr(String(e.message || e))}`);
+    }
+  }
+
+  addBtn?.addEventListener("click", () => addEmptyQuestion(qc));
+
+  genBtn?.addEventListener("click", async () => {
+    const top = getNormalFlowDataOrAlert();
+    if (!top) return;
+
+    let questions = [];
+    try {
+      questions = collectQuestionBlocks(qc);
+    } catch (e) {
+      alert(String(e.message || e));
+      return;
     }
 
     genBtn.disabled = true;
     genBtn.textContent = "Generando...";
 
     try {
-      const res = await fetch("/create_exam", {
+      const data = await apiJSON("/create_exam", {
         method: "POST",
+        credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           facilitator: top.fac,
@@ -999,7 +1228,7 @@ if (type === "check") {
           course_description: top.desc,
           course_date: top.date,
           course_duration: top.duration,
-          num_invites: top.invites,
+          num_invites: "",
           facilitator_email: top.email,
           system_area: top.system_area,
           system_title: top.system_title,
@@ -1007,10 +1236,10 @@ if (type === "check") {
         })
       });
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) return alert(data.error || "Error al crear");
-
       setHTML(resultBox, `✅ Formulario de asistencia creado:<br><a href="${data.exam_url}" target="_blank">${data.exam_url}</a>`);
+      toast("Formulario de asistencia creado");
+    } catch (e) {
+      alert(String(e.message || e));
     } finally {
       genBtn.disabled = false;
       genBtn.textContent = "Crear Formulario de Asistencia";
@@ -1018,15 +1247,16 @@ if (type === "check") {
   });
 
   btnOpenForms?.addEventListener("click", async () => {
-    const top = getExamTopDataOrAlert();
+    const top = getNormalFlowDataOrAlert();
     if (!top) return;
 
     btnOpenForms.disabled = true;
     btnOpenForms.textContent = "Creando asistencia...";
 
     try {
-      const res = await fetch("/create_exam", {
+      const data = await apiJSON("/create_exam", {
         method: "POST",
+        credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           facilitator: top.fac,
@@ -1035,7 +1265,7 @@ if (type === "check") {
           course_description: top.desc,
           course_date: top.date,
           course_duration: top.duration,
-          num_invites: top.invites,
+          num_invites: "",
           facilitator_email: top.email,
           system_area: top.system_area,
           system_title: top.system_title,
@@ -1043,10 +1273,10 @@ if (type === "check") {
         })
       });
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) return alert(data.error || "No se pudo crear la asistencia");
-
       setHTML(resultDirect, `✅ Asistencia creada correctamente:<br><a href="${data.exam_url}" target="_blank">${data.exam_url}</a>`);
+      toast("Asistencia creada");
+    } catch (e) {
+      alert(String(e.message || e));
     } finally {
       btnOpenForms.disabled = false;
       btnOpenForms.textContent = "Crear asistencia";
@@ -1054,175 +1284,136 @@ if (type === "check") {
   });
 
   reuseBtn?.addEventListener("click", async () => {
-    const top = getExamTopDataOrAlert();
+    const top = getReuseDataOrAlert();
     if (!top) return;
 
     const id = examSelect?.value || "";
-    if (!id) return alert("Selecciona un examen.");
+    if (!id) {
+      alert("Selecciona una formación.");
+      return;
+    }
 
     reuseBtn.disabled = true;
     reuseBtn.textContent = "Reutilizando...";
 
     try {
-      const res = await fetch(`/duplicate_exam/${id}`, { method: "POST" });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) return alert(data.error || "No se pudo reutilizar");
-
-      setHTML(resultReuse, `✅ Examen reutilizado (nuevo link):<br><a href="${data.exam_url}" target="_blank">${data.exam_url}</a>`);
-
-      if (getSelectedSystem() && getSelectedTopic()) {
-        await filterReuseExamsBySystemAndTitle();
-      }
-    } finally {
-      reuseBtn.disabled = false;
-      reuseBtn.textContent = "Reutilizar";
-    }
-  });
-
-  editBtn?.addEventListener("click", async () => {
-    const id = examSelect?.value || "";
-    if (!id) return alert("Selecciona un examen.");
-
-    editBtn.disabled = true;
-    editBtn.textContent = "Cargando...";
-
-    try {
-      const res = await fetch(`/api/exam/${id}`);
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) return alert(data.error || "No se pudo cargar");
-
-      editingExamId = id;
-
-      if (facilitatorEdit) facilitatorEdit.value = data.facilitator || "";
-      if (facilitatorCedulaEdit) facilitatorCedulaEdit.value = data.facilitator_cedula || "";
-      if (courseEdit) courseEdit.value = data.course || "";
-
-      if (data.system_area) {
-        getSystemChecks().forEach((c) => { c.checked = (c.value === data.system_area); });
-        fillTopics(data.system_area, data.system_title || "");
-      } else {
-        fillTopics("", "");
-      }
-
-      if (course) {
-        course.value = data.system_title || "";
-        setCourseLocked(true);
-      }
-
-      if (qcEdit) {
-        qcEdit.innerHTML = "";
-        (data.questions || []).forEach((q) => makeQuestionBlockFromData(q, qcEdit));
-      }
-
-      show(editArea);
-      setHTML(resultEdit, `✏️ Editando Formulario de Asistencias: <b>${id}</b><br>Link:<br><a href="/exam/${id}" target="_blank">/exam/${id}</a>`);
-    } finally {
-      editBtn.disabled = false;
-      editBtn.textContent = "Editar examen";
-    }
-  });
-
-  addBtnEdit?.addEventListener("click", () => addEmptyQuestion(qcEdit));
-
-  saveBtn?.addEventListener("click", async () => {
-    if (!editingExamId) return alert("No hay examen cargado para editar.");
-
-    const fac = normalizeText(facilitatorEdit?.value);
-    const facCed = (facilitatorCedulaEdit?.value || "").trim();
-    const c = (courseEdit?.value || "").trim();
-    if (!fac || !facCed || !c) return alert("Campos obligatorios.");
-
-    const blocks = qcEdit ? [...qcEdit.querySelectorAll(".question")] : [];
-    if (!blocks.length) return alert("Debe existir al menos una pregunta.");
-
-    const questions = [];
-    try {
-      for (let i = 0; i < blocks.length; i++) {
-        const b = blocks[i];
-        const title = (b.querySelector(".qtext")?.value || "").trim();
-        const type = (b.querySelector(".qtype")?.value || "").trim();
-        if (!title) throw new Error(`Pregunta ${i + 1} vacía`);
-
-        if (type === "text") {
-          questions.push({ title, type: "text", scored: false });
-          continue;
-        }
-        if (type === "true_false") {
-          const correct = Number(b.querySelector(".correct_tf")?.value ?? 0);
-          questions.push({ title, type: "true_false", correct, scored: true });
-          continue;
-        }
-const options = [...b.querySelectorAll(".opt")].map((x) => (x.value || "").trim()).filter(Boolean);
-if (options.length < 2) throw new Error(`Pregunta ${i + 1}: mínimo 2 opciones`);
-
-if (type === "multiple") {
-  const correct = Number(b.querySelector(".correct")?.value ?? 0);
-  questions.push({ title, type: "multiple", options, correct, scored: true });
-  continue;
-}
-
-if (type === "check") {s
-  const correctIdxs = [...b.querySelectorAll(".correct_chk:checked")]
-    .map((x) => Number(x.value))
-    .filter((n) => Number.isInteger(n));
-  if (!correctIdxs.length) throw new Error(`Pregunta ${i + 1}: marca al menos una correcta (check)`);
-  questions.push({ title, type: "check", options, correct: correctIdxs, scored: true });
-  continue;
-}
-
-        if (type === "check") {
-          if (scored) {
-            const correctIdxs = [...b.querySelectorAll(".correct_chk:checked")]
-              .map((x) => Number(x.value))
-              .filter((n) => Number.isInteger(n));
-            if (!correctIdxs.length) throw new Error(`Pregunta ${i + 1}: marca al menos una correcta (check)`);
-            questions.push({ title, type: "check", options, correct: correctIdxs, scored: true });
-          } else {
-            questions.push({ title, type: "check", options, scored: false });
-          }
-          continue;
-        }
-        throw new Error(`Pregunta ${i + 1}: tipo inválido`);
-      }
-    } catch (e) {
-      return alert(String(e.message || e));
-    }
-
-    saveBtn.disabled = true;
-    saveBtn.textContent = "Guardando...";
-
-    try {
-      const res = await fetch(`/api/exam/${editingExamId}`, {
-        method: "PUT",
+      const data = await apiJSON(`/duplicate_exam/${id}`, {
+        method: "POST",
+        credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          facilitator: fac,
-          facilitator_cedula: facCed,
-          course: c,
-          course_description: (courseDescription?.value || "").trim(),
-          course_date: (course_date?.value || "").trim(),
-          course_duration: (course_duration?.value || "").trim(),
-          num_invites: (num_invites?.value || "").trim(),
-          facilitator_email: (facilitator_email?.value || "").trim(),
-          system_area: getSelectedSystem(),
-          system_title: getSelectedTopic(),
-          questions
+          facilitator: top.fac,
+          facilitator_cedula: top.facCed,
+          course: top.c,
+          course_date: top.date,
+          course_duration: top.duration,
+          num_invites: "",
+          facilitator_email: top.email,
+          system_area: top.system_area,
+          system_title: top.system_title
         })
       });
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) return alert(data.error || "No se pudo guardar");
-
-      setHTML(resultEdit, `✅ Cambios guardados.<br>Link del examen:<br><a href="${data.exam_url}" target="_blank">${data.exam_url}</a>`);
-
-      if (getSelectedSystem() && getSelectedTopic()) {
-        await filterReuseExamsBySystemAndTitle();
+      if (courseDescription) {
+        courseDescription.value = data.course_description || "";
       }
+
+      show(reuseSelectedBlock);
+      hide(normalFlowBlock);
+
+      setHTML(
+        resultReuse,
+        `✅ Formación reutilizada con los nuevos datos.<br>
+         <b>Descripción heredada:</b> ${escAttr(data.course_description || "")}<br><br>
+         <a href="${data.exam_url}" target="_blank">${data.exam_url}</a>`
+      );
+
+      toast("Formación reutilizada");
+    } catch (e) {
+      alert(String(e.message || e));
     } finally {
-      saveBtn.disabled = false;
-      saveBtn.textContent = "Guardar cambios (Editar)";
+      reuseBtn.disabled = false;
+      reuseBtn.textContent = "Reutilizar formación";
     }
   });
+
+  const modeYes = document.getElementById("mode_yes");
+  const modeNo = document.getElementById("mode_no");
+  const directLinkBlock = document.getElementById("direct_link_block");
+  const yesSubmodeBlock = document.getElementById("yes_submode_block");
+  const create0Block = document.getElementById("create0_block");
+
+  function getMainMode() {
+    if (modeYes?.checked) return "yes";
+    if (modeNo?.checked) return "no";
+    return "";
+  }
+
+  function getReuseMode() {
+    if (reuseYes?.checked) return "yes";
+    if (reuseNo?.checked) return "no";
+    return "";
+  }
+
+  function toggleMainMode() {
+    const m = getMainMode();
+
+    hide(directLinkBlock);
+    hide(yesSubmodeBlock);
+    hide(create0Block);
+
+    if (m === "no") {
+      show(directLinkBlock);
+      return;
+    }
+
+    if (m === "yes") {
+      show(yesSubmodeBlock);
+      show(create0Block);
+      if (qc && qc.children.length === 0) addEmptyQuestion(qc);
+    }
+  }
+
+  function toggleReuseMode() {
+    const rm = getReuseMode();
+
+    hide(reuseSelectedBlock);
+    hide(normalFlowBlock);
+    hide(directLinkBlock);
+    hide(yesSubmodeBlock);
+    hide(create0Block);
+
+    if (rm === "yes") {
+      show(reuseSelectedBlock);
+      hide(systemTopicBlock);
+
+      const selectedSystem = getSelectedSystem();
+      if (reuseSystemPreview) {
+        reuseSystemPreview.value = selectedSystem || "";
+      }
+
+      if (getSelectedSystem()) {
+        filterReuseExamsBySystemOnly();
+      } else {
+        resetExamSelect("Selecciona Sistema…");
+        setHTML(resultReuse, "");
+      }
+      return;
+    }
+
+    if (rm === "no") {
+      if (getSelectedSystem() && (SYSTEM_TOPICS[getSelectedSystem()] || []).length) {
+        show(systemTopicBlock);
+      }
+      show(normalFlowBlock);
+      toggleMainMode();
+    }
+  }
+
+  modeYes?.addEventListener("change", toggleMainMode);
+  modeNo?.addEventListener("change", toggleMainMode);
+  reuseYes?.addEventListener("change", toggleReuseMode);
+  reuseNo?.addEventListener("change", toggleReuseMode);
 
   (async () => {
     clearCourse();
@@ -1233,12 +1424,17 @@ if (type === "check") {s
     if (IS_ADMIN) document.body.classList.add("is-admin");
     else document.body.classList.remove("is-admin");
 
+    applyUITexts();
+    ensureAdminEditIcons();
+    bindUITextEditors();
+
     renderSystemAreas();
     bindSystemAreaEvents();
 
     buildSearchIndex();
     bindGlobalAutocomplete();
 
+    toggleReuseMode();
     toggleMainMode();
 
     const sys = getSelectedSystem();
@@ -1250,6 +1446,7 @@ if (type === "check") {s
 
     ensureSysDeleteBtn();
     ensureSysDiscardBtn();
-  })();
 
+    if (IS_ADMIN) await loadDefaultQuestionsAdmin();
+  })();
 })();
